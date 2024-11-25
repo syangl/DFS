@@ -82,6 +82,12 @@ public class DataServer {
             case DEL_FILE:
                 deleteFile(in,out);
                 break;
+            case CREATE_DIRECTORY:
+                handleCreateDirectory(in,out);
+                break;
+            case DELETE_DIRECTORY:
+                handleDeleteDirectory(in,out);
+                break;
             default:
                 throw new IOException("Unknown op " + op + " in data stream");
         }
@@ -196,7 +202,55 @@ public class DataServer {
         writer.println(message);
     }
 
+    private void handleCreateDirectory(DataInputStream in, DataOutputStream out) throws IOException {
+        String path = in.readUTF();
 
+        try {
+            log.info("Directory creation request received for path: " + path);
+            // Directory creation does not involve actual storage in DataServer,
+            // but this can be extended for future use (e.g., logs or local tracking).
+
+            out.writeInt(0); // 成功响应
+            out.writeUTF("Directory creation acknowledged: " + path);
+        } catch (Exception e) {
+            out.writeInt(-1); // 错误响应
+            out.writeUTF("Error handling directory creation: " + e.getMessage());
+        }
+    }
+
+    private void handleDeleteDirectory(DataInputStream in, DataOutputStream out) throws IOException {
+        String path = in.readUTF();
+
+        try {
+            log.info("Directory deletion request received for path: " + path);
+            // Directory deletion does not involve actual storage in DataServer,
+            // but this can be extended for future use (e.g., logs or local tracking).
+
+            out.writeInt(0); // 成功响应
+            out.writeUTF("Directory deletion acknowledged: " + path);
+        } catch (Exception e) {
+            out.writeInt(-1); // 错误响应
+            out.writeUTF("Error handling directory deletion: " + e.getMessage());
+        }
+    }
+
+    private void handleReadFile(DataInputStream in, DataOutputStream out) throws IOException {
+        String fileId = in.readUTF(); // 读取文件 ID
+        String filePath = storage_path + File.separator + fileId;
+
+        try (RandomAccessFile file = new RandomAccessFile(filePath, "r")) {
+            byte[] buffer = new byte[1024];
+            int bytesRead;
+            while ((bytesRead = file.read(buffer)) != -1) {
+                out.writeInt(bytesRead);
+                out.write(buffer, 0, bytesRead);
+            }
+            out.writeInt(-1); // 结束标志
+        } catch (Exception e) {
+            out.writeInt(-1);
+            out.writeUTF("Error reading file: " + e.getMessage());
+        }
+    }
 
     public static void main(String[] args) {
         DataServer dataServer = new DataServer();

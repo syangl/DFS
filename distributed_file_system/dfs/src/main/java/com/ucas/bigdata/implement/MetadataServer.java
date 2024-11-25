@@ -1,5 +1,6 @@
 package com.ucas.bigdata.implement;
 
+import com.ucas.bigdata.client.Connection;
 import com.ucas.bigdata.common.Config;
 import com.ucas.bigdata.common.FileInfo;
 import com.ucas.bigdata.common.MetaOpCode;
@@ -141,6 +142,21 @@ public class MetadataServer {
                 case CLOSE_FILE:
                     closeFile(in, out);
                     break;
+                case GET_FILE_SIZE:
+                    handleGetFileSize(in, out);
+                    break;
+                case READ_FILE:
+                    handleDownloadFile(in, out);
+                    break;
+                case GET_FILE_INFO:
+                    handleGetFileInfo(in, out);
+                    break;
+                case COPY_FILE:
+                    handleCopyFile(in, out);
+                    break;
+                case MOVE_FILE:
+                    handleMoveFile(in, out);
+                    break;
                 default:
                     System.out.println("Unknown op " + op + " in data stream");
                     //throw new IOException("Unknown op " + op + " in data stream");
@@ -191,17 +207,21 @@ public class MetadataServer {
 
             log.info(new Date().toString()+" before createFile." );
             FileInfo fi = create(path,owner,isDir);
+
+
             log.info(new Date().toString()+" after createFile." );
-            String nodeName = getNewStorageNode(0);
-            String localFileId = UUID.randomUUID().toString();
-            fi.getLocations().add(nodeName+":"+localFileId);
+            if (!isDir) { // 如果是文件，分配存储节点和数据块 ID
+                String nodeName = getNewStorageNode(0); // 分配存储节点
+                String localFileId = UUID.randomUUID().toString(); // 生成唯一文件块 ID
+                fi.getLocations().add(nodeName + ":" + localFileId); // 记录存储位置
+            }
 
             // 持久化到 RocksDB
             db.put(path.getBytes(), serializeFileInfo(fi));
 
             // 返回code
             out.writeInt(0);
-            out.writeUTF(nodeName+":"+localFileId);
+            out.writeUTF(isDir ? "Directory created successfully: " + path : "File created successfully: " + path);
             out.flush();
             log.info(new Date().toString()+" createFile 1." );
         } catch (IOException e) {
@@ -427,6 +447,324 @@ public class MetadataServer {
             log.error(e.getMessage());
         }
     }
+
+
+    private void handleCreateFile(DataInputStream in, DataOutputStream out) throws IOException {
+        String path = in.readUTF();
+        String owner = in.readUTF();
+        boolean isDir = in.readBoolean(); // 区分文件和目录
+
+        if (isDir) {
+            handleCreateDirectory(path, owner, out); // 调用新增的 createDirectory 逻辑
+        } else {
+            // 调用现有的 createFile 方法逻辑
+            try {
+                FileInfo fi = create(path, owner, false);
+                String nodeName = getNewStorageNode(0);
+                String localFileId = UUID.randomUUID().toString();
+                fi.getLocations().add(nodeName + ":" + localFileId);
+                db.put(path.getBytes(), serializeFileInfo(fi));
+
+                out.writeInt(0);
+                out.writeUTF(nodeName + ":" + localFileId);
+            } catch (Exception e) {
+                out.writeInt(-1);
+                out.writeUTF(e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 处理目录创建请求
+     *
+     * @param path  路径
+     * @param owner 所有者
+     * @param out   输出流
+     */
+    private void handleCreateDirectory(String path, String owner, DataOutputStream out) throws IOException {
+        try {
+            FileInfo dirInfo = createDirectory(path, owner); // 调用新增的 createDirectory 方法
+            db.put(path.getBytes(), serializeFileInfo(dirInfo)); // 持久化到 RocksDB
+
+            out.writeInt(0); // 成功状态码
+            out.writeUTF("Directory created successfully: " + path);
+        } catch (IllegalArgumentException e) {
+            out.writeInt(-1);
+            out.writeUTF("Invalid request: " + e.getMessage());
+        } catch (Exception e) {
+            out.writeInt(-1);
+            out.writeUTF("Internal server error: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 创建目录逻辑
+     *
+     * @param path  路径
+     * @param owner 所有者
+     * @return 创建的目录信息
+     */
+    private FileInfo createDirectory(String path, String owner) {
+        if (fileSystem.containsKey(path)) {
+            throw new IllegalArgumentException("Directory already exists: " + path);
+        }
+
+        String parentPath = getParentPath(path);
+        FileInfo parent = fileSystem.get(parentPath);
+
+        if (parent == null || !parent.isDirectory()) {
+            throw new IllegalArgumentException("Parent directory does not exist: " + parentPath);
+        }
+
+        FileInfo newDir = new FileInfo(path, owner, true, parent);
+        fileSystem.put(path, newDir);
+        return newDir;
+    }
+
+    private void handleDeleteFile(DataInputStream in, DataOutputStream out) throws IOException {
+        String path = in.readUTF();
+        boolean isDirectory = in.readBoolean(); // 区分文件和目录
+
+        if (isDirectory) {
+            handleDeleteDirectory(path, out); // 调用新增的目录删除逻辑
+        } else {
+            // 调用现有的文件删除逻辑
+            try {
+                FileInfo fileInfo = fileSystem.get(path);
+                if (fileInfo == null) {
+                    throw new IllegalArgumentException("File not found: " + path);
+                }
+
+                fileSystem.remove(path);
+                db.delete(path.getBytes()); // 从 RocksDB 删除元数据
+                out.writeInt(0);
+                out.writeUTF("File deleted successfully: " + path);
+            } catch (Exception e) {
+                out.writeInt(-1);
+                out.writeUTF(e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 删除目录及其子内容
+     *
+     * @param path 目录路径
+     * @param out  输出流
+     */
+    private void handleDeleteDirectory(String path, DataOutputStream out) throws IOException {
+        try {
+            FileInfo dirInfo = fileSystem.get(path);
+            if (dirInfo == null || !dirInfo.isDirectory()) {
+                throw new IllegalArgumentException("Directory not found or not a directory: " + path);
+            }
+
+            deleteDirectoryRecursive(dirInfo); // 递归删除目录内容
+            fileSystem.remove(path);
+            db.delete(path.getBytes()); // 删除持久化元数据
+
+            out.writeInt(0);
+            out.writeUTF("Directory deleted successfully: " + path);
+        } catch (Exception e) {
+            out.writeInt(-1);
+            out.writeUTF(e.getMessage());
+        }
+    }
+
+
+    private void handleGetFileSize(DataInputStream in, DataOutputStream out) throws IOException {
+        String path = in.readUTF(); // 读取路径
+
+        try {
+            FileInfo fileInfo = fileSystem.get(path);
+            if (fileInfo == null) {
+                throw new IllegalArgumentException("File or directory not found: " + path);
+            }
+
+            long size;
+            if (fileInfo.isDirectory()) {
+                size = calculateDirectorySize(fileInfo); // 计算目录大小
+            } else {
+                size = fileInfo.getFileSize(); // 文件大小
+            }
+
+            out.writeInt(0); // 成功状态码
+            out.writeLong(size); // 返回大小
+        } catch (IllegalArgumentException e) {
+            out.writeInt(-1); // 错误状态码
+            out.writeUTF(e.getMessage());
+        } catch (Exception e) {
+            out.writeInt(-1);
+            out.writeUTF("Internal server error: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 计算目录大小（递归累加子文件和子目录大小）
+     *
+     * @param dirInfo 目录信息
+     * @return 大小（字节）
+     */
+    private long calculateDirectorySize(FileInfo dirInfo) {
+        long totalSize = 0;
+        for (FileInfo child : dirInfo.getChildren()) {
+            if (child.isDirectory()) {
+                totalSize += calculateDirectorySize(child); // 递归计算子目录大小
+            } else {
+                totalSize += child.getFileSize();
+            }
+        }
+        return totalSize;
+    }
+
+    private void handleDownloadFile(DataInputStream in, DataOutputStream out) throws IOException {
+        String filePath = in.readUTF(); // 读取文件路径
+
+        try {
+            FileInfo fileInfo = fileSystem.get(filePath);
+            if (fileInfo == null || fileInfo.isDirectory()) {
+                throw new IllegalArgumentException("File not found or is a directory: " + filePath);
+            }
+
+            String location = fileInfo.getLocations().get(0); // 获取存储节点
+            String[] nodeInfo = location.split(":");
+            String nodeHost = nodeInfo[0];
+            String fileId = nodeInfo[1];
+
+            // 转发请求到数据服务器
+            try (Connection dataConnection = new Connection(nodeHost, Config.DATA_SERVRE_PORT)) {
+                DataOutputStream dataOut = dataConnection.getOut();
+                DataInputStream dataIn = dataConnection.getIn();
+
+                // 转发 READ_FILE 请求
+                MetaOpCode.READ_FILE.write(dataOut);
+                dataOut.writeUTF(fileId); // 发送文件 ID
+                dataOut.flush();
+
+                // 读取响应并返回给客户端
+                int retCode = dataIn.readInt();
+                out.writeInt(retCode);
+                if (retCode == 0) {
+                    int chunkSize;
+                    while ((chunkSize = dataIn.readInt()) != -1) {
+                        byte[] buffer = new byte[chunkSize];
+                        dataIn.readFully(buffer);
+                        out.writeInt(chunkSize);
+                        out.write(buffer);
+                    }
+                    out.writeInt(-1); // 结束标志
+                } else {
+                    String errorMsg = dataIn.readUTF();
+                    out.writeUTF(errorMsg);
+                }
+            }
+        } catch (Exception e) {
+            out.writeInt(-1);
+            out.writeUTF(e.getMessage());
+        }
+    }
+
+    private void handleGetFileInfo(DataInputStream in, DataOutputStream out) throws IOException {
+        String path = in.readUTF(); // 读取路径
+
+        try {
+            FileInfo fileInfo = fileSystem.get(path);
+            if (fileInfo == null) {
+                throw new IllegalArgumentException("File or directory not found: " + path);
+            }
+
+            out.writeInt(0); // 成功状态码
+            out.writeUTF(fileInfo.serialize()); // 返回序列化的 FileInfo 对象
+        } catch (IllegalArgumentException e) {
+            out.writeInt(-1); // 错误状态码
+            out.writeUTF(e.getMessage());
+        } catch (Exception e) {
+            out.writeInt(-1);
+            out.writeUTF("Internal server error: " + e.getMessage());
+        }
+    }
+
+    private void handleCopyFile(DataInputStream in, DataOutputStream out) throws IOException {
+        String sourcePath = in.readUTF(); // 源文件路径
+        String destPath = in.readUTF();   // 目标文件路径
+
+        try {
+            // 检查源文件是否存在
+            FileInfo sourceFileInfo = fileSystem.get(sourcePath);
+            if (sourceFileInfo == null || sourceFileInfo.isDirectory()) {
+                throw new IllegalArgumentException("Source file not found or is a directory: " + sourcePath);
+            }
+
+            // 检查目标路径是否已存在
+            if (fileSystem.containsKey(destPath)) {
+                throw new IllegalArgumentException("Destination path already exists: " + destPath);
+            }
+
+            // 创建目标文件元数据
+            FileInfo destFileInfo = new FileInfo(
+                    destPath,
+                    sourceFileInfo.getOwner(),
+                    false,
+                    fileSystem.get(getParentPath(destPath))
+            );
+            destFileInfo.setFileSize(sourceFileInfo.getFileSize());
+            destFileInfo.setLocations(new ArrayList<>(sourceFileInfo.getLocations())); // 复制存储位置
+
+            // 更新元数据
+            fileSystem.put(destPath, destFileInfo);
+            db.put(destPath.getBytes(), serializeFileInfo(destFileInfo)); // 持久化到 RocksDB
+
+            out.writeInt(0); // 成功状态码
+            out.writeUTF("File copied successfully.");
+        } catch (Exception e) {
+            out.writeInt(-1); // 错误状态码
+            out.writeUTF(e.getMessage());
+        }
+    }
+
+    private void handleMoveFile(DataInputStream in, DataOutputStream out) throws IOException {
+        String sourcePath = in.readUTF(); // 源文件路径
+        String destPath = in.readUTF();   // 目标文件路径
+
+        try {
+            // 检查源文件是否存在
+            FileInfo sourceFileInfo = fileSystem.get(sourcePath);
+            if (sourceFileInfo == null) {
+                throw new IllegalArgumentException("Source file not found: " + sourcePath);
+            }
+
+            // 检查目标路径是否已存在
+            if (fileSystem.containsKey(destPath)) {
+                throw new IllegalArgumentException("Destination path already exists: " + destPath);
+            }
+
+            // 更新元数据
+            FileInfo destFileInfo = new FileInfo(
+                    destPath,
+                    sourceFileInfo.getOwner(),
+                    sourceFileInfo.isDirectory(),
+                    fileSystem.get(getParentPath(destPath))
+            );
+            destFileInfo.setFileSize(sourceFileInfo.getFileSize());
+            destFileInfo.setLocations(new ArrayList<>(sourceFileInfo.getLocations()));
+
+            // 删除源文件元数据
+            fileSystem.remove(sourcePath);
+            db.delete(sourcePath.getBytes());
+
+            // 添加目标文件元数据
+            fileSystem.put(destPath, destFileInfo);
+            db.put(destPath.getBytes(), serializeFileInfo(destFileInfo));
+
+            out.writeInt(0); // 成功状态码
+            out.writeUTF("File moved successfully.");
+        } catch (Exception e) {
+            out.writeInt(-1); // 错误状态码
+            out.writeUTF(e.getMessage());
+        }
+    }
+
+
 
     // 查询文件的存储位置
     public void getFileLocations(DataInputStream in, DataOutputStream out) throws IOException {

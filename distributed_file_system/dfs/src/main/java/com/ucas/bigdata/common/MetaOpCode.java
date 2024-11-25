@@ -11,7 +11,12 @@ public enum MetaOpCode {
     DEL_FILE((byte)33),
     LIST_FILE((byte)34),
     GET_FILE_LOCATIONS((byte)35),
-    CLOSE_FILE((byte)36);
+    CLOSE_FILE((byte)36),
+    GET_FILE_SIZE((byte)37),
+    READ_FILE((byte)38),
+    GET_FILE_INFO((byte)39),
+    COPY_FILE((byte)40),
+    MOVE_FILE((byte)41);
 
 
 

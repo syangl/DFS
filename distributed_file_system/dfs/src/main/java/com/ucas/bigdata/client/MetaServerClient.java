@@ -3,7 +3,9 @@ package com.ucas.bigdata.client;
 import com.ucas.bigdata.common.Config;
 import com.ucas.bigdata.common.FileInfo;
 import com.ucas.bigdata.common.MetaOpCode;
-
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -78,8 +80,11 @@ public class MetaServerClient {
 
     public String createFile(String path) {
         try {
+            DataOutputStream out = connection.getOut();
+            DataInputStream in = connection.getIn();
             MetaOpCode.CREATE_FILE.write(connection.getOut()); //
             connection.flush();
+            MetaOpCode.CREATE_FILE.write(out);
             connection.writeUTF(path); // 读取客户端发送路径
             connection.writeUTF(Config.USER); // 读取客户端发送用户
             connection.writeBoolean(false); // 是否为目录
@@ -167,6 +172,174 @@ public class MetaServerClient {
             }
         } catch (IOException e) {
             e.printStackTrace();
+            return false;
+        }
+    }
+
+    public boolean createDirectory(String path) {
+        try {
+            DataOutputStream out = connection.getOut();
+            DataInputStream in = connection.getIn();
+
+            // 发送 CREATE_FILE 操作码
+            MetaOpCode.CREATE_FILE.write(out);
+            out.writeUTF(path);       // 目录路径
+            out.writeUTF(Config.USER); // 用户
+            out.writeBoolean(true);   // 标记为目录
+            out.flush();
+
+            // 读取响应
+            int retCode = in.readInt();
+            String msg = in.readUTF();
+
+            if (retCode == 0) {
+                System.out.println("Directory created successfully: " + path);
+                return true;
+            } else {
+                System.err.println("Failed to create directory: " + msg);
+                return false;
+            }
+        } catch (IOException e) {
+            System.err.println("Failed to create directory: " + path);
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    public boolean deleteDirectory(String path) throws IOException {
+        DataOutputStream out = connection.getOut();
+        DataInputStream in = connection.getIn();
+
+        // 发送 DEL_FILE 操作码
+        MetaOpCode.DEL_FILE.write(out);
+        out.writeUTF(path);       // 目录路径
+        out.writeBoolean(true);   // 标记为目录删除
+        out.flush();
+
+        // 读取响应
+        int retCode = in.readInt();
+        String msg = in.readUTF();
+
+        if (retCode == 0) {
+            System.out.println("Directory deleted successfully: " + path);
+            return true;
+        } else {
+            System.err.println("Failed to delete directory: " + msg);
+            return false;
+        }
+    }
+
+    public long getFileSize(String path) throws IOException {
+        DataOutputStream out = connection.getOut();
+        DataInputStream in = connection.getIn();
+
+        // 发送 GET_FILE_SIZE 操作码
+        MetaOpCode.GET_FILE_SIZE.write(out);
+        out.writeUTF(path); // 文件或目录路径
+        out.flush();
+
+        // 读取响应
+        int retCode = in.readInt();
+        if (retCode == 0) {
+            return in.readLong(); // 返回大小
+        } else {
+            String errorMsg = in.readUTF();
+            System.err.println("Failed to get file size: " + errorMsg);
+            return -1;
+        }
+    }
+
+    public byte[] downloadFile(String remotePath) throws IOException {
+        DataOutputStream out = connection.getOut();
+        DataInputStream in = connection.getIn();
+
+        // 发送 READ_FILE 操作码
+        MetaOpCode.READ_FILE.write(out);
+        out.writeUTF(remotePath); // 发送远程文件路径
+        out.flush();
+
+        // 读取响应
+        int retCode = in.readInt();
+        if (retCode != 0) {
+            String errorMsg = in.readUTF();
+            System.err.println("Failed to download file: " + errorMsg);
+            return null;
+        }
+
+        // 读取文件数据
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        int chunkSize;
+        while ((chunkSize = in.readInt()) != -1) {
+            byte[] buffer = new byte[chunkSize];
+            in.readFully(buffer);
+            bos.write(buffer);
+        }
+
+        return bos.toByteArray();
+    }
+
+    public FileInfo getFileInfo(String path) throws IOException {
+        DataOutputStream out = connection.getOut();
+        DataInputStream in = connection.getIn();
+
+        // 发送 GET_FILE_INFO 操作码
+        MetaOpCode.GET_FILE_INFO.write(out);
+        out.writeUTF(path); // 文件或目录路径
+        out.flush();
+
+        // 读取响应
+        int retCode = in.readInt();
+        if (retCode == 0) {
+            // 反序列化 FileInfo 对象
+            String fileInfoSerialized = in.readUTF();
+            return FileInfo.deserialize(fileInfoSerialized);
+        } else {
+            String errorMsg = in.readUTF();
+            System.err.println("Failed to get file info: " + errorMsg);
+            return null;
+        }
+    }
+
+    public boolean copyFile(String sourcePath, String destPath) throws IOException {
+        DataOutputStream out = connection.getOut();
+        DataInputStream in = connection.getIn();
+
+        // 发送 COPY_FILE 操作码
+        MetaOpCode.COPY_FILE.write(out);
+        out.writeUTF(sourcePath); // 源文件路径
+        out.writeUTF(destPath);   // 目标文件路径
+        out.flush();
+
+        // 读取响应
+        int retCode = in.readInt();
+        if (retCode == 0) {
+            System.out.println("File copied successfully from " + sourcePath + " to " + destPath);
+            return true;
+        } else {
+            String errorMsg = in.readUTF();
+            System.err.println("Failed to copy file: " + errorMsg);
+            return false;
+        }
+    }
+
+    public boolean moveFile(String sourcePath, String destPath) throws IOException {
+        DataOutputStream out = connection.getOut();
+        DataInputStream in = connection.getIn();
+
+        // 发送 MOVE_FILE 操作码
+        MetaOpCode.MOVE_FILE.write(out);
+        out.writeUTF(sourcePath); // 源文件路径
+        out.writeUTF(destPath);   // 目标文件路径
+        out.flush();
+
+        // 读取响应
+        int retCode = in.readInt();
+        if (retCode == 0) {
+            System.out.println("File moved successfully from " + sourcePath + " to " + destPath);
+            return true;
+        } else {
+            String errorMsg = in.readUTF();
+            System.err.println("Failed to move file: " + errorMsg);
             return false;
         }
     }

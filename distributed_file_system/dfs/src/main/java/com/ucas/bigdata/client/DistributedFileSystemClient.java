@@ -2,6 +2,7 @@ package com.ucas.bigdata.client;
 
 import com.ucas.bigdata.common.Config;
 import com.ucas.bigdata.common.DataOpCode;
+import com.ucas.bigdata.common.MetaOpCode;
 import com.ucas.bigdata.common.FileInfo;
 import com.ucas.bigdata.implement.DataServer;
 import com.ucas.bigdata.implement.StorageNode;
@@ -18,12 +19,14 @@ public class DistributedFileSystemClient {
     private static Logger log = LogManager.getLogger(DataServer.class);
 
     private MetaServerClient metaDataClient;
+    private List<Connection> storageNodeConnections;
     private List<StorageNode> storageNodes;
     private String cur_dir = "/";
 
     public DistributedFileSystemClient() throws IOException {
         metaDataClient = new MetaServerClient();
         storageNodes = new ArrayList();
+        storageNodeConnections = new ArrayList<>();
         // 初始化存储节点列表
 //        storageNodes.add(new StorageNode("storage-node-1"));
         //storageNodes.add(new StorageNode("storage-node-2"));
@@ -193,15 +196,35 @@ public class DistributedFileSystemClient {
     }
 
     // 获取文件大小
-    private long getFileSize(String filePath) {
-        // 实现获取文件大小的逻辑
-        return 0; // 假设获取文件大小的方法
+    public long getFileSize(String path) {
+        try {
+            return metaDataClient.getFileSize(path); // 调用 MetaServerClient 的逻辑
+        } catch (IOException e) {
+            System.err.println("Failed to get file size for: " + path);
+            e.printStackTrace();
+            return -1;
+        }
     }
 
 
-    public boolean downloadFile(String remoteFilePath, String localFilePath) {
-        // 实现下载文件逻辑
-        return false;
+    public boolean downloadFile(String remotePath, String localPath) {
+        try {
+            byte[] fileData = metaDataClient.downloadFile(remotePath);
+            if (fileData == null) {
+                System.err.println("Failed to download file: " + remotePath);
+                return false;
+            }
+
+            try (FileOutputStream fos = new FileOutputStream(localPath)) {
+                fos.write(fileData);
+            }
+            System.out.println("File downloaded successfully to: " + localPath);
+            return true;
+        } catch (IOException e) {
+            System.err.println("Failed to save file: " + localPath);
+            e.printStackTrace();
+            return false;
+        }
     }
 
 
@@ -257,32 +280,66 @@ public class DistributedFileSystemClient {
 
 
 
-    public boolean createDirectory(String remoteDirectoryPath) {
-        // 实现创建目录逻辑
-        return false;
+    public boolean createDirectory(String path) {
+        return metaDataClient.createDirectory(path); // 调用 MetaServerClient 的逻辑
     }
 
-    public boolean deleteDirectory(String remoteDirectoryPath) {
-        // 实现删除目录逻辑
-        return false;
+    public boolean deleteDirectory(String path) {
+        try {
+            return metaDataClient.deleteDirectory(path); // 调用 MetaServerClient 的逻辑
+        } catch (IOException e) {
+            System.err.println("Failed to delete directory: " + path);
+            e.printStackTrace();
+            return false;
+        }
     }
 
-    public FileInfo getFileInfo(String remoteFilePath) {
-        // 实现获取文件信息逻辑
-        return null;
+    public FileInfo getFileInfo(String path) {
+        try {
+            return metaDataClient.getFileInfo(path); // 调用 MetaServerClient 的逻辑
+        } catch (IOException e) {
+            System.err.println("Failed to get file info for: " + path);
+            e.printStackTrace();
+            return null;
+        }
     }
-    public boolean copyFile(String sourcePath, String destinationPath) {
-        // 实现复制文件逻辑
-        return false;
+    public boolean copyFile(String sourcePath, String destPath) {
+        try {
+            return metaDataClient.copyFile(sourcePath, destPath); // 调用 MetaServerClient 的逻辑
+        } catch (IOException e) {
+            System.err.println("Failed to copy file from " + sourcePath + " to " + destPath);
+            e.printStackTrace();
+            return false;
+        }
     }
-    public boolean moveFile(String sourcePath, String destinationPath) {
-        // 实现移动文件逻辑
-        return false;
+    public boolean moveFile(String sourcePath, String destPath) {
+        try {
+            return metaDataClient.moveFile(sourcePath, destPath); // 调用 MetaServerClient 的逻辑
+        } catch (IOException e) {
+            System.err.println("Failed to move file from " + sourcePath + " to " + destPath);
+            e.printStackTrace();
+            return false;
+        }
     }
 
     // 与存储节点断开连接
-    private void disconnectFromStorageNodes() {
-        // 实现断开连接逻辑
+    public void disconnectFromStorageNodes() {
+        for (Connection connection : storageNodeConnections) {
+            try {
+                connection.close();
+                System.out.println("Disconnected from storage node: " + connection);
+            } catch (IOException e) {
+                System.err.println("Failed to disconnect from storage node: " + connection);
+                e.printStackTrace();
+            }
+        }
+        storageNodeConnections.clear();
+    }
+
+    public void connectToStorageNode(String nodeHost) throws IOException {
+        Connection connection = new Connection(nodeHost, Config.DATA_SERVRE_PORT);
+        storageNodeConnections.add(connection);
+        System.out.println("Connected to storage node: " + nodeHost);
     }
 
     // 其他辅助方法的实现...
@@ -296,8 +353,76 @@ public class DistributedFileSystemClient {
         while (running) {
             System.out.println("Enter command (open, read, write, close, exit):");
             String command = scanner.nextLine();
-
+            String dirPath = scanner.nextLine().trim();
+            String sourcePath = scanner.nextLine().trim();
+            String destPath = scanner.nextLine().trim();
             switch (command.toLowerCase()) {
+                case "connect":
+                    System.out.println("Enter storage node host:");
+                    String nodeHost = scanner.nextLine().trim();
+                    try {
+                        client.connectToStorageNode(nodeHost);
+                    } catch (IOException e) {
+                        System.err.println("Failed to connect to storage node: " + nodeHost);
+                        e.printStackTrace();
+                    }
+                    break;
+
+                case "disconnect":
+                    client.disconnectFromStorageNodes();
+                    break;
+
+                case "move":
+                    System.out.println("Enter source file path:");
+                    System.out.println("Enter destination file path:");
+                    if (client.moveFile(sourcePath, destPath)) {
+                        System.out.println("File moved successfully.");
+                    } else {
+                        System.err.println("File move failed.");
+                    }
+                    break;
+
+                case "mkdir":
+                    System.out.println("Enter directory path:");
+                    if (client.createDirectory(dirPath)) {
+                        System.out.println("Directory created: " + dirPath);
+                    } else {
+                        System.err.println("Failed to create directory: " + dirPath);
+                    }
+                    break;
+
+                case "rmdir":
+                    System.out.println("Enter directory path:");
+                    if (client.deleteDirectory(dirPath)) {
+                        System.out.println("Directory deleted: " + dirPath);
+                    } else {
+                        System.err.println("Failed to delete directory: " + dirPath);
+                    }
+                    break;
+
+                case "size":
+                    System.out.println("Enter file or directory path:");
+
+                    long size = client.getFileSize(dirPath);
+                    if (size >= 0) {
+                        System.out.println("Size of " + dirPath + ": " + size + " bytes");
+                    } else {
+                        System.err.println("Failed to get size of: " + dirPath);
+                    }
+                    break;
+
+                case "download":
+                    System.out.println("Enter remote file path:");
+                    String remotePath = scanner.nextLine().trim();
+                    System.out.println("Enter local file path:");
+                    String localPath = scanner.nextLine().trim();
+                    if (client.downloadFile(remotePath, localPath)) {
+                        System.out.println("Download successful.");
+                    } else {
+                        System.err.println("Download failed.");
+                    }
+                    break;
+
                 case "open":
                     System.out.println("Enter file path:");
                     String path = scanner.nextLine();
@@ -308,6 +433,17 @@ public class DistributedFileSystemClient {
                         System.out.println("Failed to open file.");
                     }
                     break;
+
+                case "copy":
+                    System.out.println("Enter source file path:"+sourcePath);
+                    System.out.println("Enter destination file path:"+destPath);
+                    if (client.copyFile(sourcePath, destPath)) {
+                        System.out.println("File copied successfully.");
+                    } else {
+                        System.err.println("File copy failed.");
+                    }
+                    break;
+
                 case "cd":
                     System.out.println("Enter path:");
                     String rel_path = scanner.nextLine().trim();
@@ -315,6 +451,17 @@ public class DistributedFileSystemClient {
                         //@todo 检查路径
                         client.cur_dir = client.cur_dir + File.separator + rel_path;
                     }
+
+                case "info":
+                    System.out.println("Enter file or directory path:");
+                    FileInfo info = client.getFileInfo(dirPath);
+                    if (info != null) {
+                        System.out.println("File/Directory Info: " + info);
+                    } else {
+                        System.err.println("Failed to retrieve info for: " + dirPath);
+                    }
+                    break;
+
                 case "read":
                     // 实现从文件读取数据的逻辑
                     System.out.println("Enter file path:");

@@ -1,9 +1,10 @@
 package com.ucas.bigdata.common;
 
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
-public class FileInfo { // 文件元数据结构
+public class FileInfo implements Serializable { // 文件元数据结构
 
     private String fileName;
     private long fileSize;
@@ -50,6 +51,47 @@ public class FileInfo { // 文件元数据结构
         } else {
             return path.substring(lastSeparatorIndex+1);
         }
+    }
+
+    public String serialize() {
+        StringBuilder serialized = new StringBuilder();
+        serialized.append(fileName).append(",")
+                .append(fileSize).append(",")
+                .append(path).append(",")
+                .append(owner).append(",")
+                .append(isDirectory);
+
+        // 添加存储位置
+        serialized.append(",").append(String.join(";", locations));
+        return serialized.toString();
+    }
+
+    /**
+     * 反序列化字符串为 FileInfo 对象
+     *
+     * @param serialized 序列化的字符串
+     * @return 反序列化后的 FileInfo 对象
+     */
+    public static FileInfo deserialize(String serialized) {
+        String[] parts = serialized.split(",", 6); // 使用 6 分隔，避免路径或其他字段被误分隔
+        String fileName = parts[0];
+        long fileSize = Long.parseLong(parts[1]);
+        String path = parts[2];
+        String owner = parts[3];
+        boolean isDirectory = Boolean.parseBoolean(parts[4]);
+        long creationTime = Long.parseLong(parts[5]);
+
+        // 构造对象
+        FileInfo fileInfo = new FileInfo(fileName, path, isDirectory, fileSize, owner, creationTime);
+        // 添加存储位置
+        if (parts.length > 5 && !parts[5].isEmpty()) {
+            String[] locationArray = parts[5].split(";");
+            for (String location : locationArray) {
+                fileInfo.getLocations().add(location);
+            }
+        }
+
+        return fileInfo;
     }
 
     public String getFileName() {

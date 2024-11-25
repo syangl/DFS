@@ -7,7 +7,9 @@ import java.io.IOException;
 public enum DataOpCode {
     WRITE_FILE((byte)10),
     READ_FILE((byte)11),
-    DEL_FILE((byte)12);
+    DEL_FILE((byte)12),
+    CREATE_DIRECTORY((byte)13),
+    DELETE_DIRECTORY((byte)14);
 
     public final byte code;
 
