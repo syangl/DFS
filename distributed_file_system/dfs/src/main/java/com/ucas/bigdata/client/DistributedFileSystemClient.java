@@ -353,9 +353,6 @@ public class DistributedFileSystemClient {
         while (running) {
             System.out.println("Enter command (open, read, write, close, exit):");
             String command = scanner.nextLine();
-            String dirPath = scanner.nextLine().trim();
-            String sourcePath = scanner.nextLine().trim();
-            String destPath = scanner.nextLine().trim();
             switch (command.toLowerCase()) {
                 case "connect":
                     System.out.println("Enter storage node host:");
@@ -375,7 +372,9 @@ public class DistributedFileSystemClient {
                 case "move":
                     System.out.println("Enter source file path:");
                     System.out.println("Enter destination file path:");
-                    if (client.moveFile(sourcePath, destPath)) {
+                    String moveSourcePath = scanner.nextLine().trim();
+                    String moveDestPath = scanner.nextLine().trim();
+                    if (client.moveFile(moveSourcePath, moveDestPath)) {
                         System.out.println("File moved successfully.");
                     } else {
                         System.err.println("File move failed.");
@@ -384,30 +383,32 @@ public class DistributedFileSystemClient {
 
                 case "mkdir":
                     System.out.println("Enter directory path:");
-                    if (client.createDirectory(dirPath)) {
-                        System.out.println("Directory created: " + dirPath);
+                    String mkdirDirPath = scanner.nextLine().trim();
+                    if (client.createDirectory(mkdirDirPath)) {
+                        System.out.println("Directory created: " + mkdirDirPath);
                     } else {
-                        System.err.println("Failed to create directory: " + dirPath);
+                        System.err.println("Failed to create directory: " + mkdirDirPath);
                     }
                     break;
 
                 case "rmdir":
                     System.out.println("Enter directory path:");
-                    if (client.deleteDirectory(dirPath)) {
-                        System.out.println("Directory deleted: " + dirPath);
+                    String rmdirDirPath = scanner.nextLine().trim();
+                    if (client.deleteDirectory(rmdirDirPath)) {
+                        System.out.println("Directory deleted: " + rmdirDirPath);
                     } else {
-                        System.err.println("Failed to delete directory: " + dirPath);
+                        System.err.println("Failed to delete directory: " + rmdirDirPath);
                     }
                     break;
 
                 case "size":
                     System.out.println("Enter file or directory path:");
-
-                    long size = client.getFileSize(dirPath);
+                    String sizeDirPath = scanner.nextLine().trim();
+                    long size = client.getFileSize(sizeDirPath);
                     if (size >= 0) {
-                        System.out.println("Size of " + dirPath + ": " + size + " bytes");
+                        System.out.println("Size of " + sizeDirPath + ": " + size + " bytes");
                     } else {
-                        System.err.println("Failed to get size of: " + dirPath);
+                        System.err.println("Failed to get size of: " + sizeDirPath);
                     }
                     break;
 
@@ -435,9 +436,11 @@ public class DistributedFileSystemClient {
                     break;
 
                 case "copy":
-                    System.out.println("Enter source file path:"+sourcePath);
-                    System.out.println("Enter destination file path:"+destPath);
-                    if (client.copyFile(sourcePath, destPath)) {
+                    String copySourcePath = scanner.nextLine().trim();
+                    String copyDestPath = scanner.nextLine().trim();
+                    System.out.println("Enter source file path:"+copySourcePath);
+                    System.out.println("Enter destination file path:"+copyDestPath);
+                    if (client.copyFile(copySourcePath, copyDestPath)) {
                         System.out.println("File copied successfully.");
                     } else {
                         System.err.println("File copy failed.");
@@ -454,11 +457,12 @@ public class DistributedFileSystemClient {
 
                 case "info":
                     System.out.println("Enter file or directory path:");
-                    FileInfo info = client.getFileInfo(dirPath);
+                    String infoDirPath = scanner.nextLine().trim();
+                    FileInfo info = client.getFileInfo(infoDirPath);
                     if (info != null) {
                         System.out.println("File/Directory Info: " + info);
                     } else {
-                        System.err.println("Failed to retrieve info for: " + dirPath);
+                        System.err.println("Failed to retrieve info for: " + infoDirPath);
                     }
                     break;
 

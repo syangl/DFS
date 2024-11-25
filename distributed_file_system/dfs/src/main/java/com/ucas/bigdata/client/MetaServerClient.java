@@ -188,9 +188,13 @@ public class MetaServerClient {
             out.writeBoolean(true);   // 标记为目录
             out.flush();
 
+            System.out.println("debug 1");
+
             // 读取响应
             int retCode = in.readInt();
             String msg = in.readUTF();
+
+            System.out.println("debug 3");
 
             if (retCode == 0) {
                 System.out.println("Directory created successfully: " + path);
@@ -200,7 +204,7 @@ public class MetaServerClient {
                 return false;
             }
         } catch (IOException e) {
-            System.err.println("Failed to create directory: " + path);
+            System.err.println("Failed to create directory(IOException): " + path);
             e.printStackTrace();
             return false;
         }

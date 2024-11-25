@@ -125,6 +125,7 @@ public class MetadataServer {
                     handleHeartBeat(in, out);
                     break;
                 case CREATE_FILE:
+                    System.out.println("debug 2");
                     createFile(in, out);
                     break;
                 case RENAME_FILE:
