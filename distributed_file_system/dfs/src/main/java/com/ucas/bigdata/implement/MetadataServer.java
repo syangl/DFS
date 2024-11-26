@@ -14,8 +14,11 @@ import org.rocksdb.RocksIterator;
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketException;
 import java.util.*;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MetadataServer {
     private static Logger log = LogManager.getLogger(MetadataServer.class);
@@ -23,13 +26,17 @@ public class MetadataServer {
     private Map<String, String> fileToStorageNode; // 文件路径到存储节点名称的映射
     private LinkedHashMap<String,StorageNode> storageNodes = new LinkedHashMap();
     private LinkedHashMap<String,Long> storageNodesUpTime = new LinkedHashMap();
+    private HashMap<String,ServerThread> threads = new HashMap<>();
     private Map<String, String> fileOwners;
     private Map<String, FileInfo> fileSystem; // 文件元数据，文件路径到文件信息的映射
     private RocksDB db;
-
+    private ExecutorService threadPool; // 使用线程池
     private boolean isRunning;
 
+
+
     public MetadataServer() {
+
         fileSystem = new HashMap();
         fileToStorageNode = new HashMap();
         // 初始化存储节点，对应三台虚拟机
@@ -40,7 +47,7 @@ public class MetadataServer {
         fileSystem.put("/", new FileInfo(null, "/", true,0l,"root", 0l));
         try {
             serverSocket = new ServerSocket(Config.META_SERVRE_PORT);
-
+            threadPool = Executors.newFixedThreadPool(100);
             // 初始化DB
             Options options = new Options().setCreateIfMissing(true);
             db = RocksDB.open(options, Config.META_DB_PATH);
@@ -78,30 +85,58 @@ public class MetadataServer {
         oos.writeObject(fileInfo);
         return bos.toByteArray();
     }
-
     private void serve() {
         System.out.println("MetaServer is running...");
         isRunning = true;
-        while (isRunning) {
-            // 接受客户端连接
-            Socket clientSocket = null;
-            try {
+        try {
+            while (isRunning) {
+                // 接受客户端连接
+                Socket clientSocket = null;
+
                 clientSocket = serverSocket.accept();
-                // 获取客户端请求的文件名和偏移量
-                DataInputStream in = new DataInputStream(clientSocket.getInputStream());
-                // 发送文件内容给客户端
-                DataOutputStream out = new DataOutputStream(clientSocket.getOutputStream());
-                MetaOpCode op = MetaOpCode.read(in);
-                process(clientSocket,op,in,out);
-            } catch (IOException e) {
-                e.printStackTrace();
-                break;
+                // 接收客户端连接
+                System.out.println("Client connected: " + clientSocket.getInetAddress());
+                // 提交给线程池处理
+                threadPool.execute(new ServerThread(clientSocket));
             }
-            finally {
+        } catch (IOException e){
+            System.err.println("Error accepting client connections: " + e.getMessage());
+        }
+    }
+
+    public void shutdown() {
+        isRunning = false;
+        threadPool.shutdown(); // 优雅关闭线程池
+        try {
+            serverSocket.close();
+        } catch (IOException e) {
+            System.err.println("Error shutting down server: " + e.getMessage());
+        }
+    }
+
+    private class ServerThread implements Runnable {
+        private Socket clientSocket;
+        public ServerThread(Socket clientSocket) {
+            this.clientSocket = clientSocket;
+        }
+        @Override
+        public void run() {
+            try {
+                DataInputStream in = new DataInputStream(clientSocket.getInputStream());
+                DataOutputStream out = new DataOutputStream(clientSocket.getOutputStream());
+                // 处理客户端请求
+                while (true){
+                    MetaOpCode op = MetaOpCode.read(in);
+                    process(op, in, out);
+                }
+            }
+            catch (IOException e) {
+                System.err.println("Error processing client request: " + e.getMessage());
+            } finally {
                 try {
                     clientSocket.close();
                 } catch (IOException e) {
-                    e.printStackTrace();
+                    System.err.println("Error closing client connection: " + e.getMessage());
                 }
             }
         }
@@ -118,61 +153,46 @@ public class MetadataServer {
      * 一致性和同步： 当文件信息或状态发生变化时，确保元数据服务器和数据服务器之间的信息是一致的。你可能需要考虑使用分布式一致性协议（如 Paxos、Raft）来实现这一点。
      * @throws IOException
      */
-    protected final void process(Socket clientSocket, MetaOpCode op, DataInputStream in, DataOutputStream out) throws IOException {
-        while(isRunning) {
-            switch (op) {
-                case HEART_BEAT:
-                    handleHeartBeat(in, out);
-                    break;
-                case CREATE_FILE:
-                    System.out.println("debug 2");
-                    createFile(in, out);
-                    break;
-                case RENAME_FILE:
-                    //@todo
-                    break;
-                case DEL_FILE:
-                    delete(in, "dfs", out);  // 默认用户 "dfs"
-                    break;
-                case LIST_FILE:
-                    listFile(in, out);
-                    break;
-                case GET_FILE_LOCATIONS:
-                    getFileLocations(in, out);
-                    break;
-                case CLOSE_FILE:
-                    closeFile(in, out);
-                    break;
-                case GET_FILE_SIZE:
-                    handleGetFileSize(in, out);
-                    break;
-                case READ_FILE:
-                    handleDownloadFile(in, out);
-                    break;
-                case GET_FILE_INFO:
-                    handleGetFileInfo(in, out);
-                    break;
-                case COPY_FILE:
-                    handleCopyFile(in, out);
-                    break;
-                case MOVE_FILE:
-                    handleMoveFile(in, out);
-                    break;
-                default:
-                    System.out.println("Unknown op " + op + " in data stream");
-                    //throw new IOException("Unknown op " + op + " in data stream");
-            }
-            try {
-                op = MetaOpCode.read(in);
-            } catch (IOException e) {
-                e.printStackTrace();
-                try {
-                    clientSocket.close();
-                } catch (IOException e1) {
-                    e1.printStackTrace();
-                }
+    protected final void process( MetaOpCode op, DataInputStream in, DataOutputStream out) throws IOException {
+        switch (op) {
+            case HEART_BEAT:
+                handleHeartBeat(in, out);
                 break;
-            }
+            case CREATE_FILE:
+                createFile(in, out);
+                break;
+            case RENAME_FILE:
+                //@todo
+                break;
+            case DEL_FILE:
+                delete(in, "dfs", out);  // 默认用户 "dfs"
+                break;
+            case LIST_FILE:
+                listFile(in, out);
+                break;
+            case GET_FILE_LOCATIONS:
+                getFileLocations(in, out);
+                break;
+            case CLOSE_FILE:
+                closeFile(in, out);
+                break;
+            case GET_FILE_SIZE:
+                handleGetFileSize(in, out);
+                break;
+            case READ_FILE:
+                handleDownloadFile(in, out);
+                break;
+            case GET_FILE_INFO:
+                handleGetFileInfo(in, out);
+                break;
+            case COPY_FILE:
+                handleCopyFile(in, out);
+                break;
+            case MOVE_FILE:
+                handleMoveFile(in, out);
+                break;
+            default:
+                System.out.println("Unknown op " + op + " in data stream");
         }
     }
 
@@ -184,7 +204,6 @@ public class MetadataServer {
                 out.writeUTF("File not found: " + path);
                 return;
             }
-
             // 这里可以添加资源释放逻辑，例如标记文件已关闭
             out.writeInt(0); // 成功响应
             out.writeUTF("File closed successfully.");
@@ -198,28 +217,19 @@ public class MetadataServer {
             }
         }
     }
-
-
     private void createFile(DataInputStream in, DataOutputStream out) {
         try {
             String path = in.readUTF(); // 读取客户端发送路径
             String owner = in.readUTF(); // 读取客户端发送用户
             boolean isDir = in.readBoolean(); // 是否为目录
-
             log.info(new Date().toString()+" before createFile." );
             FileInfo fi = create(path,owner,isDir);
-
-
             log.info(new Date().toString()+" after createFile." );
-            if (!isDir) { // 如果是文件，分配存储节点和数据块 ID
-                String nodeName = getNewStorageNode(0); // 分配存储节点
-                String localFileId = UUID.randomUUID().toString(); // 生成唯一文件块 ID
-                fi.getLocations().add(nodeName + ":" + localFileId); // 记录存储位置
-            }
-
+            String nodeName = getNewStorageNode(0); // 分配存储节点
+            String localFileId = UUID.randomUUID().toString(); // 生成唯一文件块 ID
+            fi.getLocations().add(nodeName + ":" + localFileId); // 记录存储位置
             // 持久化到 RocksDB
             db.put(path.getBytes(), serializeFileInfo(fi));
-
             // 返回code
             out.writeInt(0);
             out.writeUTF(isDir ? "Directory created successfully: " + path : "File created successfully: " + path);
@@ -234,11 +244,9 @@ public class MetadataServer {
             } catch (IOException e1) {
                 e1.printStackTrace();
             }
-
         } catch (RocksDBException e) {
             throw new RuntimeException(e);
         }
-
         System.out.println(new Date().toString()+" createFile done." );
 
     }
@@ -275,7 +283,6 @@ public class MetadataServer {
         }
     }
 
-
     // 删除文件或目录
     public void delete(DataInputStream in, String requester, DataOutputStream out) {
         String path = null;
@@ -292,7 +299,6 @@ public class MetadataServer {
                 log.info("File/Directory " + path + " not found.");
                 return;
             }
-
             FileInfo fileInfo = fileSystem.get(path);
             String owner = fileInfo.getOwner();
 
@@ -303,16 +309,13 @@ public class MetadataServer {
                 log.info("Permission denied. You are not the owner of " + path);
                 return;
             }
-
             // 如果是目录，递归删除子文件和子目录
             if (fileInfo.isDirectory()) {
                 deleteDirectoryRecursive(fileInfo);
             }
-
             // 删除文件元数据
             fileSystem.remove(path);
             db.delete(path.getBytes()); // 删除持久化记录
-
             out.writeInt(0); // 成功响应
             out.writeUTF("File/Directory " + path + " deleted successfully.");
             log.info((fileInfo.isDirectory() ? "Directory" : "File") + " " + path + " deleted by " + requester);
@@ -381,7 +384,7 @@ public class MetadataServer {
 
     public String getNewStorageNode(long fileSize) {
         Random random = new Random();
-        int id = random.nextInt() % storageNodes.size();
+        int id = Math.abs(random.nextInt()) % storageNodes.size();
         String sn = (String)storageNodes.keySet().toArray()[id];
         return sn;
     }
@@ -404,7 +407,6 @@ public class MetadataServer {
             }
             int size = fileList.size();
             out.writeInt(size);
-            System.out.println(" size:" + size);
             if(size > 0) {
                 for (String name : fileList) {
                     out.writeUTF(name);
@@ -421,8 +423,8 @@ public class MetadataServer {
     private void handleHeartBeat(DataInputStream in, DataOutputStream out) {
         try {
             String nodeName = in.readUTF(); // 读取数据服务器发送的注册信息
-            System.out.println(new Date().toString()+" received heartBeat from DataServer: " + nodeName);
-
+            //TODO 更新时间戳
+//            System.out.println(new Date().toString()+" received heartBeat from DataServer: " + nodeName);
             String msg = nodeName;
             Long now = System.currentTimeMillis();
             if(this.storageNodes.containsKey(nodeName)){//更新时间
@@ -431,7 +433,6 @@ public class MetadataServer {
                     msg += " time out is registered.";
                     System.out.println(msg);
                 }
-
                 Long lastUpTime = storageNodesUpTime.get(nodeName);
                 if(now - lastUpTime > Config.TIMEOUT_OF_HEARTBEATS * Config.HEARTBEAT_SECS * 1000){
                     msg += " time out is recovered.";
@@ -440,7 +441,6 @@ public class MetadataServer {
                     storageNodesUpTime.put(nodeName,now);//更新时间
                 }
             }
-
             // 处理心跳信息并回复数据服务器
             out.writeInt(0);
             out.writeUTF(msg);
@@ -448,7 +448,6 @@ public class MetadataServer {
             log.error(e.getMessage());
         }
     }
-
 
     private void handleCreateFile(DataInputStream in, DataOutputStream out) throws IOException {
         String path = in.readUTF();
@@ -786,7 +785,7 @@ public class MetadataServer {
     }
 
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws IOException {
         MetadataServer metaServer = new MetadataServer();
         metaServer.serve();
 

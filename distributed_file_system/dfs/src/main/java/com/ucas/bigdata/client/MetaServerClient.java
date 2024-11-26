@@ -7,6 +7,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.net.SocketException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -48,11 +49,7 @@ public class MetaServerClient {
             connection.flush();
             connection.writeUTF(cur_dir); // 客户端发送路径
             connection.flush();
-
-
-
             int size =  connection.readInt();
-            System.out.println("list size:" + size);
             for(int i = 0;i<size;i++){
                 fl.add(connection.readUTF());
             }
@@ -131,22 +128,22 @@ public class MetaServerClient {
     }
 
     public List<String> getFileLocations(String path) {
+        List<String> locations = null;
         try {
-            MetaOpCode.CREATE_FILE.write(connection.getOut()); //
+            MetaOpCode.GET_FILE_LOCATIONS.write(connection.getOut()); //
             connection.flush();
             connection.writeUTF(path); // 读取客户端发送路径
-
             connection.flush();
             // 读取List<String>
             int size = connection.readInt();
-            List<String> locations = new ArrayList<>();
+            locations = new ArrayList<>();
             for(int i = 0;i<size;i++){
                 locations.add(connection.readUTF());
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
-        return null;
+        return locations;
     }
 
     public boolean deleteFile(String path) {
@@ -181,20 +178,18 @@ public class MetaServerClient {
             DataOutputStream out = connection.getOut();
             DataInputStream in = connection.getIn();
 
+
             // 发送 CREATE_FILE 操作码
             MetaOpCode.CREATE_FILE.write(out);
+            out.flush();
             out.writeUTF(path);       // 目录路径
             out.writeUTF(Config.USER); // 用户
             out.writeBoolean(true);   // 标记为目录
             out.flush();
 
-            System.out.println("debug 1");
-
             // 读取响应
             int retCode = in.readInt();
             String msg = in.readUTF();
-
-            System.out.println("debug 3");
 
             if (retCode == 0) {
                 System.out.println("Directory created successfully: " + path);

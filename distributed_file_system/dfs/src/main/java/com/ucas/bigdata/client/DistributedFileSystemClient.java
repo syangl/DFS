@@ -280,8 +280,49 @@ public class DistributedFileSystemClient {
 
 
 
-    public boolean createDirectory(String path) {
-        return metaDataClient.createDirectory(path); // 调用 MetaServerClient 的逻辑
+    public boolean createDirectory(String path) throws IOException {
+        // 1. 向元数据服务器发送创建目录请求
+        boolean metaResult = metaDataClient.createDirectory(path);
+        if (!metaResult) {
+            System.err.println("Failed to create directory on metadata server: " + path);
+            return false;
+        }
+
+        // 2. 获取存储节点地址
+        List<String> locations = metaDataClient.getFileLocations(path);
+        if (locations.isEmpty()) {
+            System.err.println("No storage nodes available for directory: " + path);
+            return false;
+        }
+        String[] nodeInfo = locations.get(0).split(":");
+        String nodeHost = nodeInfo[0];
+        //TODO 修改为本地
+        nodeHost="localhost";
+
+        // 3. 连接到数据服务器
+        try (Connection connection = new Connection(nodeHost, Config.DATA_SERVRE_PORT)) {
+            DataOutputStream out = connection.getOut();
+            DataInputStream in = connection.getIn();
+            // 4. 向数据服务器发送创建目录请求
+            DataOpCode.CREATE_DIRECTORY.write(out); // 发送操作码
+            out.writeUTF(path);               // 发送目录路径（直接用路径作为标识）
+            out.flush();
+            // 5. 接收数据服务器的响应
+            int retCode = in.readInt();
+            String msg = in.readUTF();
+
+            if (retCode == 0) {
+                System.out.println("Directory created successfully on data server: " + path);
+                return true;
+            } else {
+                System.err.println("Failed to create directory on data server: " + msg);
+                return false;
+            }
+        } catch (IOException e) {
+            System.err.println("Failed to connect to data server: " + nodeHost);
+            e.printStackTrace();
+            return false;
+        }
     }
 
     public boolean deleteDirectory(String path) {

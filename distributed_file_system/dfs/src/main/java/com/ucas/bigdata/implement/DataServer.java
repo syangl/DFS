@@ -4,6 +4,7 @@ package com.ucas.bigdata.implement;
 import com.ucas.bigdata.client.MetaServerClient;
 import com.ucas.bigdata.common.Config;
 import com.ucas.bigdata.common.DataOpCode;
+import com.ucas.bigdata.common.MetaOpCode;
 import org.apache.log4j.LogManager;
 import org.apache.log4j.Logger;
 import sun.security.krb5.internal.HostAddress;
@@ -12,6 +13,8 @@ import sun.security.x509.IPAddressName;
 import java.io.*;
 import java.net.*;
 import java.util.Date;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class DataServer {
     private static Logger log = LogManager.getLogger(DataServer.class);
@@ -23,11 +26,15 @@ public class DataServer {
     MetaServerClient metaClient;
     ServerSocket serverSocket;
     HeartBeatThread heartBeat;
+    private ExecutorService threadPool;
 
     public DataServer() {
         try {
+
+
             this.nodeName = InetAddress.getLocalHost().getHostName();
             serverSocket = new ServerSocket(DATA_SERVRE_PORT);
+            threadPool = Executors.newFixedThreadPool(100);
             metaClient = new MetaServerClient();
             heartBeat = new HeartBeatThread();
             storage_path = "/homework_storage";
@@ -40,30 +47,56 @@ public class DataServer {
     private void serve() throws IOException {
         System.out.println("Data Server is running...");
         isRunning = true;
-        heartBeat.run();
+        heartBeat.start();
         while (isRunning) {
             // 接受客户端连接
             Socket clientSocket = serverSocket.accept();
-
-            // 获取客户端请求的文件名和偏移量
-            DataInputStream in = new DataInputStream(clientSocket.getInputStream());
-            // 发送文件内容给客户端
-            DataOutputStream out = new DataOutputStream(clientSocket.getOutputStream());
-            // 关闭客户端连接
-            clientSocket.close();
-            DataOpCode op = DataOpCode.read(in);
-            process(op,in,out);
+            System.out.println("Client connected: " + clientSocket.getInetAddress());
+            threadPool.execute(new ServerThread(clientSocket));
         }
     }
 
-    public class HeartBeatThread implements Runnable{
+    private class ServerThread implements Runnable {
+        private Socket clientSocket;
 
+        public ServerThread(Socket clientSocket) {
+            this.clientSocket = clientSocket;
+        }
+
+
+        @Override
+        public void run() {
+            try {
+                DataInputStream in = new DataInputStream(clientSocket.getInputStream());
+                DataOutputStream out = new DataOutputStream(clientSocket.getOutputStream());
+                // 处理客户端请求
+                while (true){
+                    DataOpCode op = DataOpCode.read(in);
+                    process(op, in, out);
+                }
+            }
+            catch (IOException e) {
+                System.err.println("Error processing client request: " + e.getMessage());
+            } finally {
+                try {
+                    clientSocket.close();
+                } catch (IOException e) {
+                    System.err.println("Error closing client connection: " + e.getMessage());
+                }
+            }
+        }
+    }
+
+    public class HeartBeatThread extends Thread {
+
+        @Override
         public void run() {
             while(isRunning){
                 metaClient.heartBeat(nodeName);
                 try {
                     Thread.sleep(Config.HEARTBEAT_SECS * 1000);
-                    System.out.println("heartBeat node " + nodeName + " time:"+new Date().toString());
+                    //TODO
+//                    System.out.println("heartBeat node " + nodeName + " time:"+new Date().toString());
                 } catch (InterruptedException e) {
                 }
             }
@@ -202,21 +235,39 @@ public class DataServer {
         writer.println(message);
     }
 
-    private void handleCreateDirectory(DataInputStream in, DataOutputStream out) throws IOException {
-        String path = in.readUTF();
+    private void handleCreateDirectory(DataInputStream in, DataOutputStream out) {
+        int retCode = 0;
+        String msg = "";
 
         try {
-            log.info("Directory creation request received for path: " + path);
-            // Directory creation does not involve actual storage in DataServer,
-            // but this can be extended for future use (e.g., logs or local tracking).
+            // 1. 读取目录路径
+            String dirPath = in.readUTF();
+            String fullPath = storage_path + File.separator + dirPath;
 
-            out.writeInt(0); // 成功响应
-            out.writeUTF("Directory creation acknowledged: " + path);
-        } catch (Exception e) {
-            out.writeInt(-1); // 错误响应
-            out.writeUTF("Error handling directory creation: " + e.getMessage());
+            // 2. 创建目录
+            File dir = new File(fullPath);
+            if (dir.exists() || dir.mkdirs()) {
+                retCode = 0;
+                msg = "Directory " + dirPath + " created successfully!";
+                log.info(msg);
+            } else {
+                throw new IOException("Failed to create directory: " + fullPath);
+            }
+        } catch (IOException e) {
+            log.error("Error creating directory: ", e);
+            retCode = -1;
+            msg = e.getMessage();
+        } finally {
+            try {
+                out.writeInt(retCode);
+                out.writeUTF(msg);
+                out.flush();
+            } catch (IOException e) {
+                log.error("Error sending response to client: ", e);
+            }
         }
     }
+
 
     private void handleDeleteDirectory(DataInputStream in, DataOutputStream out) throws IOException {
         String path = in.readUTF();
