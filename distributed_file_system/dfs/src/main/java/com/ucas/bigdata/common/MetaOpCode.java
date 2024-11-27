@@ -16,7 +16,9 @@ public enum MetaOpCode {
     READ_FILE((byte)38),
     GET_FILE_INFO((byte)39),
     COPY_FILE((byte)40),
-    MOVE_FILE((byte)41);
+    MOVE_FILE((byte)41),
+    DOWNLOAD_FILE((byte)42),
+    OPEN_FILE((byte) 43);
 
 
 

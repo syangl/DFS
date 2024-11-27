@@ -1,6 +1,7 @@
 package com.ucas.bigdata.client;
 
 import com.ucas.bigdata.common.Config;
+import com.ucas.bigdata.common.DataOpCode;
 import com.ucas.bigdata.common.FileInfo;
 import com.ucas.bigdata.common.MetaOpCode;
 import java.io.ByteArrayOutputStream;
@@ -42,22 +43,25 @@ public class MetaServerClient {
     }
 
 
-    public List<String> listFiles(String cur_dir) {
-        List<String> fl = new ArrayList<>();
+    public List<String> listFiles(String path) {
+        List<String> fileList = new ArrayList<>();
         try {
-            MetaOpCode.LIST_FILE.write(connection.getOut()); //
+            MetaOpCode.LIST_FILE.write(connection.getOut());
+            connection.writeUTF(path);
             connection.flush();
-            connection.writeUTF(cur_dir); // 客户端发送路径
-            connection.flush();
-            int size =  connection.readInt();
-            for(int i = 0;i<size;i++){
-                fl.add(connection.readUTF());
+
+            // 接收 MetadataServer 返回的文件列表
+            int size = connection.readInt();
+            for (int i = 0; i < size; i++) {
+                fileList.add(connection.readUTF());
             }
         } catch (IOException e) {
+            System.err.println("Error fetching file list for directory: " + path);
             e.printStackTrace();
         }
-        return fl;
+        return fileList;
     }
+
 
     public String heartBeat(String nodeName) {
         try {
@@ -100,32 +104,32 @@ public class MetaServerClient {
         return null;
     }
 
-    public boolean closeFile(String path) {
+    public boolean closeFile(String path) throws IOException {
+        DataOutputStream out = connection.getOut();
+        DataInputStream in = connection.getIn();
+
         try {
-            // 发送操作码
-            MetaOpCode.CLOSE_FILE.write(connection.getOut());
-            connection.flush();
+            // 发送 CLOSE_FILE 操作码
+            MetaOpCode.CLOSE_FILE.write(out);
+            out.writeUTF(path); // 发送文件路径
+            out.flush();
 
-            // 发送文件路径
-            connection.writeUTF(path);
-            connection.flush();
-
-            // 读取元数据服务器的响应
-            int retCode = connection.readInt();
-            String msg = connection.readUTF();
-
+            // 接收响应
+            int retCode = in.readInt();
+            String message = in.readUTF();
             if (retCode == 0) {
-                System.out.println("File closed successfully on metadata server: " + path);
+                System.out.println("Metadata server response: " + message);
                 return true;
             } else {
-                System.err.println("Failed to close file on metadata server: " + msg);
+                System.err.println("Metadata server error: " + message);
                 return false;
             }
         } catch (IOException e) {
-            e.printStackTrace();
-            return false;
+            System.err.println("Error communicating with metadata server: " + e.getMessage());
+            throw e;
         }
     }
+
 
     public List<String> getFileLocations(String path) {
         List<String> locations = null;
@@ -146,32 +150,33 @@ public class MetaServerClient {
         return locations;
     }
 
-    public boolean deleteFile(String path) {
+    public boolean deleteFile(String path) throws IOException {
+        DataOutputStream out = connection.getOut();
+        DataInputStream in = connection.getIn();
+
         try {
-            // 1. 发送删除文件的操作码
-            MetaOpCode.DEL_FILE.write(connection.getOut());
-            connection.flush();
+            // 发送 DEL_FILE 操作码
+            MetaOpCode.DEL_FILE.write(out);
+            out.writeUTF(path); // 发送文件路径
+            out.writeBoolean(false); // 标记为文件删除
+            out.flush();
 
-            // 2. 发送文件路径
-            connection.writeUTF(path);
-            connection.flush();
-
-            // 3. 读取元数据服务器的响应
-            int retCode = connection.readInt();
-            String msg = connection.readUTF();
-
+            // 接收响应
+            int retCode = in.readInt();
+            String message = in.readUTF();
             if (retCode == 0) {
-                System.out.println("Metadata deleted successfully for file: " + path);
+                System.out.println("Metadata server response: " + message);
                 return true;
             } else {
-                System.err.println("Failed to delete metadata for file: " + path + ". Reason: " + msg);
+                System.err.println("Metadata server error: " + message);
                 return false;
             }
         } catch (IOException e) {
-            e.printStackTrace();
-            return false;
+            System.err.println("Error communicating with metadata server: " + e.getMessage());
+            throw e;
         }
     }
+
 
     public boolean createDirectory(String path) {
         try {
@@ -248,56 +253,28 @@ public class MetaServerClient {
         }
     }
 
-    public byte[] downloadFile(String remotePath) throws IOException {
-        DataOutputStream out = connection.getOut();
-        DataInputStream in = connection.getIn();
-
-        // 发送 READ_FILE 操作码
-        MetaOpCode.READ_FILE.write(out);
-        out.writeUTF(remotePath); // 发送远程文件路径
-        out.flush();
-
-        // 读取响应
-        int retCode = in.readInt();
-        if (retCode != 0) {
-            String errorMsg = in.readUTF();
-            System.err.println("Failed to download file: " + errorMsg);
-            return null;
-        }
-
-        // 读取文件数据
-        ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        int chunkSize;
-        while ((chunkSize = in.readInt()) != -1) {
-            byte[] buffer = new byte[chunkSize];
-            in.readFully(buffer);
-            bos.write(buffer);
-        }
-
-        return bos.toByteArray();
-    }
-
     public FileInfo getFileInfo(String path) throws IOException {
         DataOutputStream out = connection.getOut();
         DataInputStream in = connection.getIn();
 
         // 发送 GET_FILE_INFO 操作码
         MetaOpCode.GET_FILE_INFO.write(out);
-        out.writeUTF(path); // 文件或目录路径
+        out.writeUTF(path); // 发送文件或目录路径
         out.flush();
 
         // 读取响应
         int retCode = in.readInt();
         if (retCode == 0) {
-            // 反序列化 FileInfo 对象
-            String fileInfoSerialized = in.readUTF();
-            return FileInfo.deserialize(fileInfoSerialized);
+            String serializedFileInfo = in.readUTF(); // 接收序列化的 FileInfo 对象
+            return FileInfo.deserialize(serializedFileInfo); // 反序列化为 FileInfo 对象
         } else {
             String errorMsg = in.readUTF();
             System.err.println("Failed to get file info: " + errorMsg);
             return null;
         }
     }
+
+
 
     public boolean copyFile(String sourcePath, String destPath) throws IOException {
         DataOutputStream out = connection.getOut();
@@ -342,6 +319,60 @@ public class MetaServerClient {
             return false;
         }
     }
+
+    public byte[] downloadFile(String remotePath) throws IOException {
+        DataOutputStream out = connection.getOut();
+        DataInputStream in = connection.getIn();
+
+        // 发送 GET_FILE_LOCATIONS 操作码
+        MetaOpCode.GET_FILE_LOCATIONS.write(out);
+        out.writeUTF(remotePath); // 发送文件路径
+        out.flush();
+
+        // 读取存储节点位置
+        int locationSize = in.readInt();
+        if (locationSize == 0) {
+            System.err.println("File not found or no storage nodes available: " + remotePath);
+            return null;
+        }
+
+        // 使用第一个位置
+        String location = in.readUTF();
+        String[] nodeInfo = location.split(":");
+        String nodeHost = nodeInfo[0];
+        String fileId = nodeInfo[1];
+
+        // 转发下载请求到存储节点
+        try (Connection connection = new Connection(nodeHost, Config.DATA_SERVRE_PORT)) {
+            DataOutputStream dataOut = connection.getOut();
+            DataInputStream dataIn = connection.getIn();
+
+            DataOpCode.READ_FILE.write(dataOut); // 发送读取文件的操作码
+            dataOut.writeUTF(fileId);            // 发送文件 ID
+            dataOut.flush();
+
+            int retCode = dataIn.readInt();
+            if (retCode != 0) {
+                System.err.println("Failed to download file: " + dataIn.readUTF());
+                return null;
+            }
+
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            int chunkSize;
+            while ((chunkSize = dataIn.readInt()) != -1) {
+                byte[] buffer = new byte[chunkSize];
+                dataIn.readFully(buffer);
+                bos.write(buffer);
+            }
+
+            return bos.toByteArray();
+        } catch (IOException e) {
+            System.err.println("Error during file download: " + e.getMessage());
+            e.printStackTrace();
+            return null;
+        }
+    }
+
 
     public void close() throws IOException {
         this.connection.close();

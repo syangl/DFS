@@ -112,6 +112,12 @@ public class DataServer {
             case READ_FILE:
                 readFile(in,out);
                 break;
+            case DOWNLOAD_FILE:
+                handleReadFile(in,out);
+                break;
+            case OPEN_FILE:
+                handleOpenFile(in,out);
+                break;
             case DEL_FILE:
                 deleteFile(in,out);
                 break;
@@ -121,26 +127,41 @@ public class DataServer {
             case DELETE_DIRECTORY:
                 handleDeleteDirectory(in,out);
                 break;
+            case MOVE_FILE:
+                handleMoveFile(in, out);
+                break;
+            case GET_FILE_SIZE:
+                handleGetFileSize(in, out);
+                break;
             default:
                 throw new IOException("Unknown op " + op + " in data stream");
         }
     }
 
     // 删除文件数据块
-    private void deleteFile(DataInputStream in, DataOutputStream out) throws IOException {
-        String fileId = in.readUTF();
-        String filePath = storage_path + File.separator + fileId;
+    private void deleteFile(DataInputStream in, DataOutputStream out) {
+        try {
+            String fileId = in.readUTF();
+            String filePath = storage_path + File.separator + fileId;
 
-        File file = new File(filePath);
-        if (file.exists() && file.delete()) {
-            out.writeInt(0); // 成功响应
-            out.writeUTF("File deleted successfully: " + filePath);
-        } else {
-            out.writeInt(-1); // 错误响应
-            out.writeUTF("Error deleting file or file not found: " + filePath);
+            File file = new File(filePath);
+            if (file.exists() && file.delete()) {
+                out.writeInt(0); // 成功状态码
+                out.writeUTF("File deleted successfully: " + filePath);
+            } else {
+                out.writeInt(-1); // 错误状态码
+                out.writeUTF("Error deleting file or file not found: " + filePath);
+            }
+        } catch (IOException e) {
+            try {
+                out.writeInt(-1);
+                out.writeUTF("Error handling delete file request: " + e.getMessage());
+            } catch (IOException ex) {
+                log.error("Error sending response: ", ex);
+            }
         }
-        out.flush();
     }
+
 
     private void readFile(DataInputStream in, DataOutputStream out) {
         // 创建服务器套接字，监听指定端口
@@ -270,18 +291,61 @@ public class DataServer {
 
 
     private void handleDeleteDirectory(DataInputStream in, DataOutputStream out) throws IOException {
-        String path = in.readUTF();
+        String dirPath = in.readUTF();
+        String fullPath = storage_path + File.separator + dirPath;
+
+        File dir = new File(fullPath);
+        if (dir.exists() && dir.isDirectory()) {
+            deleteDirectoryRecursive(dir); // 递归删除目录及其内容
+            out.writeInt(0); // 成功响应
+            out.writeUTF("Directory deleted successfully: " + dirPath);
+        } else {
+            out.writeInt(-1); // 错误响应
+            out.writeUTF("Directory not found or not a directory: " + dirPath);
+        }
+    }
+
+    private void deleteDirectoryRecursive(File dir) {
+        for (File file : dir.listFiles()) {
+            if (file.isDirectory()) {
+                deleteDirectoryRecursive(file);
+            }
+            file.delete();
+        }
+        dir.delete();
+    }
+
+    private void handleMoveFile(DataInputStream in, DataOutputStream out) throws IOException {
+        String sourcePath = in.readUTF(); // 源文件路径
+        String destPath = in.readUTF();   // 目标文件路径
+
+        String sourceFullPath = storage_path + File.separator + sourcePath;
+        String destFullPath = storage_path + File.separator + destPath;
+
+        File sourceFile = new File(sourceFullPath);
+        File destFile = new File(destFullPath);
 
         try {
-            log.info("Directory deletion request received for path: " + path);
-            // Directory deletion does not involve actual storage in DataServer,
-            // but this can be extended for future use (e.g., logs or local tracking).
+            // 检查源文件是否存在
+            if (!sourceFile.exists()) {
+                throw new IOException("Source file not found: " + sourcePath);
+            }
 
-            out.writeInt(0); // 成功响应
-            out.writeUTF("Directory deletion acknowledged: " + path);
-        } catch (Exception e) {
+            // 检查目标文件是否已存在
+            if (destFile.exists()) {
+                throw new IOException("Destination file already exists: " + destPath);
+            }
+
+            // 移动文件
+            if (sourceFile.renameTo(destFile)) {
+                out.writeInt(0); // 成功响应
+                out.writeUTF("File moved successfully.");
+            } else {
+                throw new IOException("Failed to move file from " + sourcePath + " to " + destPath);
+            }
+        } catch (IOException e) {
             out.writeInt(-1); // 错误响应
-            out.writeUTF("Error handling directory deletion: " + e.getMessage());
+            out.writeUTF(e.getMessage());
         }
     }
 
@@ -302,6 +366,45 @@ public class DataServer {
             out.writeUTF("Error reading file: " + e.getMessage());
         }
     }
+    private void handleGetFileSize(DataInputStream in, DataOutputStream out) throws IOException {
+        String fileId = in.readUTF(); // 读取文件 ID
+        String filePath = storage_path + File.separator + fileId;
+
+        try {
+            File file = new File(filePath);
+            if (!file.exists()) {
+                throw new IOException("File not found: " + fileId);
+            }
+
+            long size = file.length();
+            out.writeInt(0); // 成功响应
+            out.writeLong(size); // 返回文件大小
+        } catch (IOException e) {
+            out.writeInt(-1); // 错误响应
+            out.writeUTF(e.getMessage());
+        }
+    }
+    private void handleOpenFile(DataInputStream in, DataOutputStream out) throws IOException {
+        String fileId = in.readUTF(); // 读取文件 ID
+        String filePath = storage_path + File.separator + fileId;
+
+        try (RandomAccessFile file = new RandomAccessFile(filePath, "r")) {
+            out.writeInt(0); // 成功状态码
+            out.writeUTF("File is ready for reading.");
+
+            byte[] buffer = new byte[1024];
+            int bytesRead;
+            while ((bytesRead = file.read(buffer)) != -1) {
+                out.writeInt(bytesRead);
+                out.write(buffer, 0, bytesRead);
+            }
+            out.writeInt(-1); // 结束标志
+        } catch (Exception e) {
+            out.writeInt(-1);
+            out.writeUTF("Error opening file: " + e.getMessage());
+        }
+    }
+
 
     public static void main(String[] args) {
         DataServer dataServer = new DataServer();

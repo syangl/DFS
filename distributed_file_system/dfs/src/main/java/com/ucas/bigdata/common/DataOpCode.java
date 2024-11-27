@@ -9,7 +9,12 @@ public enum DataOpCode {
     READ_FILE((byte)11),
     DEL_FILE((byte)12),
     CREATE_DIRECTORY((byte)13),
-    DELETE_DIRECTORY((byte)14);
+    DELETE_DIRECTORY((byte)14),
+    MOVE_FILE((byte)15),
+    GET_FILE_SIZE((byte)16),
+    DOWNLOAD_FILE((byte)17),
+    OPEN_FILE((byte)18),
+    COPY_FILE((byte) 19);
 
     public final byte code;
 

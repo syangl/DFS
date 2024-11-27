@@ -182,6 +182,12 @@ public class MetadataServer {
             case READ_FILE:
                 handleDownloadFile(in, out);
                 break;
+            case OPEN_FILE:
+                handleOpenFile(in, out);
+                break;
+            case DOWNLOAD_FILE:
+                handleDownloadFile(in, out);
+                break;
             case GET_FILE_INFO:
                 handleGetFileInfo(in, out);
                 break;
@@ -196,27 +202,31 @@ public class MetadataServer {
         }
     }
 
-    private void closeFile(DataInputStream in, DataOutputStream out) {
+    private void closeFile(DataInputStream in, DataOutputStream out) throws IOException {
+        String path = in.readUTF(); // 读取文件路径
+
         try {
-            String path = in.readUTF();
-            if (!fileSystem.containsKey(path)) {
-                out.writeInt(-1); // 错误响应
-                out.writeUTF("File not found: " + path);
-                return;
+            // 检查文件是否存在
+            FileInfo fileInfo = fileSystem.get(path);
+            if (fileInfo == null || fileInfo.isDirectory()) {
+                throw new IllegalArgumentException("File not found or is a directory: " + path);
             }
-            // 这里可以添加资源释放逻辑，例如标记文件已关闭
-            out.writeInt(0); // 成功响应
-            out.writeUTF("File closed successfully.");
+
+            // 可添加资源释放逻辑，例如将文件标记为关闭
+            // 在此示例中仅记录关闭操作
             log.info("File " + path + " closed successfully.");
-        } catch (IOException e) {
-            try {
-                out.writeInt(-1); // 错误响应
-                out.writeUTF("Error closing file: " + e.getMessage());
-            } catch (IOException ex) {
-                log.error("Error sending closeFile response: ", ex);
-            }
+
+            out.writeInt(0); // 成功状态码
+            out.writeUTF("File closed successfully.");
+        } catch (IllegalArgumentException e) {
+            out.writeInt(-1); // 错误状态码
+            out.writeUTF(e.getMessage());
+        } catch (Exception e) {
+            out.writeInt(-1);
+            out.writeUTF("Internal server error: " + e.getMessage());
         }
     }
+
     private void createFile(DataInputStream in, DataOutputStream out) {
         try {
             String path = in.readUTF(); // 读取客户端发送路径
@@ -626,49 +636,49 @@ public class MetadataServer {
                 throw new IllegalArgumentException("File not found or is a directory: " + filePath);
             }
 
-            String location = fileInfo.getLocations().get(0); // 获取存储节点
+            String location = fileInfo.getLocations().get(0); // 获取存储节点信息
             String[] nodeInfo = location.split(":");
             String nodeHost = nodeInfo[0];
             String fileId = nodeInfo[1];
 
-            // 转发请求到数据服务器
-            try (Connection dataConnection = new Connection(nodeHost, Config.DATA_SERVRE_PORT)) {
-                DataOutputStream dataOut = dataConnection.getOut();
-                DataInputStream dataIn = dataConnection.getIn();
-
-                // 转发 READ_FILE 请求
-                MetaOpCode.READ_FILE.write(dataOut);
-                dataOut.writeUTF(fileId); // 发送文件 ID
-                dataOut.flush();
-
-                // 读取响应并返回给客户端
-                int retCode = dataIn.readInt();
-                out.writeInt(retCode);
-                if (retCode == 0) {
-                    int chunkSize;
-                    while ((chunkSize = dataIn.readInt()) != -1) {
-                        byte[] buffer = new byte[chunkSize];
-                        dataIn.readFully(buffer);
-                        out.writeInt(chunkSize);
-                        out.write(buffer);
-                    }
-                    out.writeInt(-1); // 结束标志
-                } else {
-                    String errorMsg = dataIn.readUTF();
-                    out.writeUTF(errorMsg);
-                }
-            }
+            // 将存储节点和文件 ID 返回给客户端
+            out.writeInt(0); // 成功状态码
+            out.writeUTF(nodeHost + ":" + fileId); // 返回文件存储位置
         } catch (Exception e) {
             out.writeInt(-1);
-            out.writeUTF(e.getMessage());
+            out.writeUTF("Error retrieving file location: " + e.getMessage());
         }
     }
+
+    private void handleOpenFile(DataInputStream in, DataOutputStream out) throws IOException {
+        String filePath = in.readUTF(); // 读取文件路径
+
+        try {
+            FileInfo fileInfo = fileSystem.get(filePath);
+            if (fileInfo == null || fileInfo.isDirectory()) {
+                throw new IllegalArgumentException("File not found or is a directory: " + filePath);
+            }
+
+            String location = fileInfo.getLocations().get(0); // 获取存储节点信息
+            String[] nodeInfo = location.split(":");
+            String nodeHost = nodeInfo[0];
+            String fileId = nodeInfo[1];
+
+            // 将存储节点和文件 ID 返回给客户端
+            out.writeInt(0); // 成功状态码
+            out.writeUTF(nodeHost + ":" + fileId); // 返回文件存储位置
+        } catch (Exception e) {
+            out.writeInt(-1); // 错误状态码
+            out.writeUTF("Error retrieving file location: " + e.getMessage());
+        }
+    }
+
 
     private void handleGetFileInfo(DataInputStream in, DataOutputStream out) throws IOException {
         String path = in.readUTF(); // 读取路径
 
         try {
-            FileInfo fileInfo = fileSystem.get(path);
+            FileInfo fileInfo = fileSystem.get(path); // 查找元数据
             if (fileInfo == null) {
                 throw new IllegalArgumentException("File or directory not found: " + path);
             }
