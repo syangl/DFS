@@ -39,6 +39,46 @@ public class DistributedFileSystemClient {
         metaDataClient.close();
     }
 
+    public boolean createFile(String path) {
+        try {
+            // 1. 向元数据服务器发送创建文件请求，返回存储节点信息
+            String nodeAndFileId = metaDataClient.createFile(path);
+            if (nodeAndFileId == null) {
+                System.err.println("Failed to create file on metadata server: " + path);
+                return false;
+            }
+
+            // 2. 解析存储节点信息
+            String[] nodeInfo = nodeAndFileId.split(":");
+            String nodeHost = nodeInfo[0];
+            String fileId = nodeInfo[1];
+
+            // 3. 连接数据服务器并初始化文件
+            try (Connection connection = new Connection(nodeHost, Config.DATA_SERVRE_PORT)) {
+                DataOutputStream out = connection.getOut();
+                DataInputStream in = connection.getIn();
+
+                DataOpCode.CREATE_FILE.write(out); // 发送写文件操作码
+                out.writeUTF(fileId);             // 发送文件 ID
+                out.write(new byte[0]);           // 写入空文件数据
+                out.flush();
+
+                int retCode = in.readInt();
+                String msg = in.readUTF();
+                if (retCode == 0) {
+                    System.out.println("File created successfully on data server: " + path);
+                    return true;
+                } else {
+                    System.err.println("Failed to create file on data server: " + msg);
+                    return false;
+                }
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
     public DataInputStream openFile(String path) {
         try {
             // 1. 获取文件存储位置（调用 MetadataServer 的 GET_FILE_LOCATIONS）
@@ -588,6 +628,16 @@ public class DistributedFileSystemClient {
 
                 case "disconnect":
                     client.disconnectFromStorageNodes();
+                    break;
+
+                case "create":
+                    System.out.print("Enter file name: ");
+                    String filePath = scanner.nextLine().trim();
+                    if (client.createFile(filePath)) {
+                        System.out.println("File created: " + filePath);
+                    } else {
+                        System.out.println("Failed to create file: " + filePath);
+                    }
                     break;
 
                 case "move":

@@ -121,6 +121,9 @@ public class DataServer {
             case DEL_FILE:
                 deleteFile(in,out);
                 break;
+            case CREATE_FILE:
+                handleCreateFile(in,out);
+                break;
             case CREATE_DIRECTORY:
                 handleCreateDirectory(in,out);
                 break;
@@ -137,6 +140,57 @@ public class DataServer {
                 throw new IOException("Unknown op " + op + " in data stream");
         }
     }
+
+    private void handleCreateFile(DataInputStream in, DataOutputStream out) {
+        // 创建一个新的函数来处理创建文件的逻辑
+        int retCode = 0;
+        String msg = "";
+        FileOutputStream fout = null;
+
+        try {
+            // 1. 读取文件 ID 和文件路径
+            String fileId = in.readUTF();
+            String path = storage_path + File.separator + fileId;
+
+            // 2. 创建文件
+            File file = new File(path);
+            if (file.exists()) {
+                throw new IOException("File already exists: " + path);
+            }
+            if (file.createNewFile()) {
+                fout = new FileOutputStream(file);
+                log.info("File " + fileId + " created successfully.");
+                msg = "File created successfully: " + fileId;
+            } else {
+                throw new IOException("Failed to create file: " + path);
+            }
+
+            // 3. 写入文件数据
+            byte[] buffer = new byte[1024];
+            int bytesRead = in.read(buffer);
+            while (bytesRead > 0) {
+                fout.write(buffer, 0, bytesRead);
+                if (bytesRead < 1024) break;
+                bytesRead = in.read(buffer);
+            }
+            fout.flush();
+        } catch (IOException e) {
+            log.error("Error creating file: ", e);
+            retCode = -1;
+            msg = "Error creating file: " + e.getMessage();
+        } finally {
+            try {
+                if (fout != null) fout.close();
+                // 发送响应
+                out.writeInt(retCode);
+                out.writeUTF(msg);
+                out.flush();
+            } catch (IOException e) {
+                log.error("Error sending response: ", e);
+            }
+        }
+    }
+
 
     // 删除文件数据块
     private void deleteFile(DataInputStream in, DataOutputStream out) {

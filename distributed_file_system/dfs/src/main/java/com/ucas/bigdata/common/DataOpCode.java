@@ -14,7 +14,8 @@ public enum DataOpCode {
     GET_FILE_SIZE((byte)16),
     DOWNLOAD_FILE((byte)17),
     OPEN_FILE((byte)18),
-    COPY_FILE((byte) 19);
+    COPY_FILE((byte) 19),
+    CREATE_FILE((byte) 20);
 
     public final byte code;
 

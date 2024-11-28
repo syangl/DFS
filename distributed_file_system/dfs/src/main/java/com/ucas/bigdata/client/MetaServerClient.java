@@ -79,30 +79,32 @@ public class MetaServerClient {
         return null;
     }
 
-    public String createFile(String path) {
+    public String createFile(String path) throws IOException {
+        DataOutputStream out = connection.getOut();
+        DataInputStream in = connection.getIn();
+
         try {
-            DataOutputStream out = connection.getOut();
-            DataInputStream in = connection.getIn();
-            MetaOpCode.CREATE_FILE.write(connection.getOut()); //
-            connection.flush();
+            // 发送 CREATE_FILE 操作码
             MetaOpCode.CREATE_FILE.write(out);
-            connection.writeUTF(path); // 读取客户端发送路径
-            connection.writeUTF(Config.USER); // 读取客户端发送用户
-            connection.writeBoolean(false); // 是否为目录
+            out.writeUTF(path);       // 文件路径
+            out.writeUTF(Config.USER); // 用户
+            out.writeBoolean(false);  // 标记为文件
+            out.flush();
 
-            connection.flush();
-            int code = connection.readInt();
-            String nodeAndFileId = connection.readUTF();
-            String nodeName = nodeAndFileId.split(":")[0];
-            String localFileId = nodeAndFileId.split(":")[1];
-            System.out.println(nodeName+":"+localFileId);
-            return localFileId;
-
+            // 接收响应
+            int retCode = in.readInt();
+            if (retCode == 0) {
+                return in.readUTF(); // 返回存储节点信息
+            } else {
+                System.err.println("Metadata server error: " + in.readUTF());
+                return null;
+            }
         } catch (IOException e) {
-            e.printStackTrace();
+            System.err.println("Error communicating with metadata server: " + e.getMessage());
+            throw e;
         }
-        return null;
     }
+
 
     public boolean closeFile(String path) throws IOException {
         DataOutputStream out = connection.getOut();
