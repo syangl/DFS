@@ -424,21 +424,18 @@ public class DistributedFileSystemClient {
 
     public boolean deleteDirectory(String path) {
         try {
-            // 1. 向元数据服务器发送目录删除请求
             boolean metaResult = metaDataClient.deleteDirectory(path);
             if (!metaResult) {
                 System.err.println("Failed to delete directory on metadata server: " + path);
                 return false;
             }
 
-            // 2. 获取存储节点地址
             List<String> locations = metaDataClient.getFileLocations(path);
             if (locations.isEmpty()) {
                 System.err.println("No storage nodes available for directory: " + path);
                 return true; // 如果没有存储节点，说明只需删除元数据即可
             }
 
-            // 3. 向数据服务器发送目录删除请求
             for (String location : locations) {
                 String[] nodeInfo = location.split(":");
                 String nodeHost = nodeInfo[0];
@@ -725,6 +722,7 @@ public class DistributedFileSystemClient {
                         //@todo 检查路径
                         client.cur_dir = client.cur_dir + File.separator + rel_path;
                     }
+                    break;
 
                 case "info":
                     System.out.println("Enter file or directory path:");
