@@ -126,14 +126,17 @@ public class DataServer {
             case CREATE_FILE:
                 handleCreateFile(in,out);
                 break;
-            case CREATE_DIRECTORY:
-                handleCreateDirectory(in,out);
-                break;
-            case DELETE_DIRECTORY:
-                handleDeleteDirectory(in,out);
-                break;
+//            case CREATE_DIRECTORY:
+//                handleCreateDirectory(in,out);
+//                break;
+//            case DELETE_DIRECTORY:
+//                handleDeleteDirectory(in,out);
+//                break;
             case MOVE_FILE:
                 handleMoveFile(in, out);
+                break;
+            case COPY_FILE:
+                handleCopyFile(in, out);
                 break;
             case GET_FILE_SIZE:
                 handleGetFileSize(in, out);
@@ -141,6 +144,55 @@ public class DataServer {
             default:
                 throw new IOException("Unknown op " + op + " in data stream");
         }
+    }
+
+    private void handleCopyFile(DataInputStream in, DataOutputStream out) {
+        int retCode = 0;
+        String msg = "";
+        try {
+            String sourcePath = in.readUTF();
+            String destPath = in.readUTF();
+
+            // 读取源文件数据
+            File sourceFile = new File(storage_path + File.separator + sourcePath);
+            if (!sourceFile.exists()) {
+                throw new FileNotFoundException("Source file not found: " + sourcePath);
+            }
+
+            File destFile = new File(storage_path + File.separator + destPath);
+            if (destFile.createNewFile()) {
+                log.info("File " + destPath + " created successfully.");
+            } else {
+                throw new IOException("Failed to create file when copying: " + destPath);
+            }
+            // copy
+            FileInputStream fis = new FileInputStream(sourceFile);
+            FileOutputStream fos = new FileOutputStream(destFile);
+            byte[] buffer = new byte[1024];
+            int bytesRead;
+            while ((bytesRead = fis.read(buffer)) != -1) {
+                fos.write(buffer, 0, bytesRead);
+            }
+
+            fis.close();
+            fos.close();
+            log.info("File copied successfully from " + sourcePath + " to " + destPath);
+            retCode = 0;
+            msg = "File copied successfully: " + sourcePath + " to " + destPath;
+        } catch (Exception e) {
+            retCode = -1;
+            msg = "Failed to copy file: " + e.getMessage();
+            throw new RuntimeException(e);
+        } finally {
+            try {
+                out.writeInt(retCode);
+                out.writeUTF(msg);
+                out.flush();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
     }
 
     private void handleCreateFile(DataInputStream in, DataOutputStream out) {
@@ -421,7 +473,7 @@ public class DataServer {
             }
             out.writeInt(-1); // 结束标志
         } catch (Exception e) {
-            out.writeInt(-1);
+            out.writeInt(-2);  // 错误响应
             out.writeUTF("Error reading file: " + e.getMessage());
         }
     }

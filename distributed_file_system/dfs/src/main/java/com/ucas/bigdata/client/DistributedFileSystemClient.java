@@ -293,7 +293,7 @@ public class DistributedFileSystemClient {
 
     public boolean downloadFile(String remotePath, String localPath) {
         try {
-            // 1. 获取文件存储位置（调用 MetadataServer 的 GET_FILE_LOCATIONS）
+            // 获取文件存储位置
             List<String> locations = metaDataClient.getFileLocations(remotePath);
             if (locations == null || locations.isEmpty()) {
                 System.err.println("No storage nodes available for file: " + remotePath);
@@ -304,45 +304,46 @@ public class DistributedFileSystemClient {
             String[] nodeInfo = locations.get(0).split(":");
 //            String nodeHost = nodeInfo[0];  TODO
             String nodeHost = "localhost";
-
             String fileId = nodeInfo[1];
 
-            // 3. 与 DataServer 建立连接
+            // 与 DataServer 建立连接
             try (Connection connection = new Connection(nodeHost, Config.DATA_SERVRE_PORT)) {
                 DataOutputStream out = connection.getOut();
                 DataInputStream in = connection.getIn();
 
-                // 4. 向 DataServer 发送 READ_FILE 请求
+                // 向 DataServer 发送 READ_FILE 请求
                 DataOpCode.DOWNLOAD_FILE.write(out); // 发送操作码
                 out.writeUTF(fileId);           // 发送文件 ID
                 out.flush();
 
-                // 5. 接收 DataServer 的响应
-                int retCode = in.readInt();
-                if (retCode != 0) {
-                    String errorMsg = in.readUTF();
-                    System.err.println("Failed to download file: " + errorMsg);
-                    return false;
-                }
-
-                // 6. 将文件数据保存到本地
+                // 将文件数据保存到本地
                 try (FileOutputStream fos = new FileOutputStream(localPath)) {
                     int chunkSize;
-                    while ((chunkSize = in.readInt()) != -1) {
+                    while ((chunkSize = in.readInt()) >= 0) {
                         byte[] buffer = new byte[chunkSize];
-                        in.readFully(buffer);
+                        in.read(buffer, 0, chunkSize);
                         fos.write(buffer);
                     }
+                    if (chunkSize == -2) {
+                        String errorMsg = in.readUTF();
+                        System.err.println("Failed to download file: " + errorMsg);
+                        fos.close();
+                        connection.close();
+                        return false;
+                    } else if (chunkSize == -1) {
+                        System.out.println("File downloaded successfully to: " + localPath);
+                        fos.close();
+                        connection.close();
+                        return true;
+                    }
                 }
-
-                System.out.println("File downloaded successfully to: " + localPath);
-                return true;
             }
         } catch (IOException e) {
             System.err.println("Error during file download: " + e.getMessage());
             e.printStackTrace();
             return false;
         }
+        return false;
     }
 
 
@@ -495,48 +496,72 @@ public class DistributedFileSystemClient {
     }
     public boolean copyFile(String sourcePath, String destPath) {
         try {
-            // 1. 调用 MetadataServer 处理元数据复制
+            // 删除旧的目标文件
+            List<String> oldLocations = metaDataClient.getFileLocations(destPath);
+            if (!oldLocations.isEmpty()) {
+                String[] destNodeInfo = oldLocations.get(0).split(":");
+//            String  oldNodeHost =  oldNodeInfo[0];  TODO
+                String  oldNodeHost = "localhost";
+                String  oldFileId = destNodeInfo[1];
+
+                try (Connection connection = new Connection(oldNodeHost, Config.DATA_SERVRE_PORT)) {
+                    DataOutputStream out = connection.getOut();
+                    DataInputStream in = connection.getIn();
+
+                    DataOpCode.DEL_FILE.write(out); // 发送删除文件操作码
+                    out.writeUTF(oldFileId);          // 发送文件 ID
+                    out.flush();
+
+                    int retCode = in.readInt();
+                    String msg = in.readUTF();
+                    if (retCode != 0) {
+                        System.err.println("Failed to delete old file on node " + oldNodeHost + ": " + msg);
+                    }
+                }
+            }
+
+            // 调用 MetadataServer 处理元数据复制
             boolean metaResult = metaDataClient.copyFile(sourcePath, destPath);
             if (!metaResult) {
                 System.err.println("Failed to copy file on metadata server.");
                 return false;
             }
 
-            // 2. 获取目标文件存储节点
-            List<String> locations = metaDataClient.getFileLocations(destPath);
-            if (locations == null || locations.isEmpty()) {
+            // 获取目标文件存储节点
+            List<String> destLocations = metaDataClient.getFileLocations(destPath);
+            if (destLocations == null || destLocations.isEmpty()) {
                 System.err.println("No storage nodes available for file: " + destPath);
                 return false;
             }
-            String[] nodeInfo = locations.get(0).split(":");
-//            String nodeHost = nodeInfo[0];  TODO
-            String nodeHost = "localhost";
-            String destFileId = nodeInfo[1];
+            String[] destNodeInfo = destLocations.get(0).split(":");
+//            String destNodeHost = destNodeInfo[0];  TODO
+            String destNodeHost = "localhost";
+            String destFileId = destNodeInfo[1];
 
-            // 3. 与 DataServer 建立连接
+            // 与 DataServer 建立连接
             List<String> sourceLocations = metaDataClient.getFileLocations(sourcePath);
             String[] sourceNodeInfo = sourceLocations.get(0).split(":");
             String sourceNodeHost = sourceNodeInfo[0];
             String sourceFileId = sourceNodeInfo[1];
 
-            try (Connection connection = new Connection(nodeHost, Config.DATA_SERVRE_PORT)) {
+            try (Connection connection = new Connection(destNodeHost, Config.DATA_SERVRE_PORT)) {
                 DataOutputStream out = connection.getOut();
                 DataInputStream in = connection.getIn();
 
-                // 4. 向 DataServer 发送 COPY_FILE 请求
+                // 向 DataServer 发送 COPY_FILE 请求
                 DataOpCode.COPY_FILE.write(out); // 发送操作码
                 out.writeUTF(sourceFileId);      // 发送源文件 ID
                 out.writeUTF(destFileId);        // 发送目标文件 ID
                 out.flush();
 
-                // 5. 检查 DataServer 的响应
+                // 检查 DataServer 的响应
                 int retCode = in.readInt();
+                String msg = in.readUTF();
                 if (retCode == 0) {
                     System.out.println("File copied successfully: " + sourcePath + " -> " + destPath);
                     return true;
                 } else {
-                    String errorMsg = in.readUTF();
-                    System.err.println("Failed to copy file: " + errorMsg);
+                    System.err.println("Failed to copy file: " + msg);
                     return false;
                 }
             }
@@ -560,6 +585,37 @@ public class DistributedFileSystemClient {
 //            String sourceFileId = sourceNodeInfo[1];
 //            // 本地测试使用 localhost
 //            String sourceNodeHost = "localhost";
+            // mv f1 to f2，如果f2存在，删除f2原来的fileId文件并替换meta的fileInfo为f2的path，否则直接替换meta的fileInfo为f2的path即可
+            // 获取目标文件的存储位置
+            List<String> destLocations = metaDataClient.getFileLocations(destPath);
+            if (!destLocations.isEmpty()) {  // 目标文件存在
+                String[] destNodeInfo = destLocations.get(0).split(":");
+//                String destNodeHost = destNodeInfo[0];  TODO
+                String destNodeHost = "localhost";
+                String destFileId = destNodeInfo[1];
+                // 连接到数据服务器
+                try (Connection connection = new Connection(destNodeHost, Config.DATA_SERVRE_PORT)) {
+                    DataOutputStream out = connection.getOut();
+                    DataInputStream in = connection.getIn();
+
+                    // 向数据服务器发送文件删除请求
+                    DataOpCode.DEL_FILE.write(out);
+                    out.writeUTF(destFileId);
+                    out.flush();
+
+                    // 接收数据服务器的响应
+                    int retCode = in.readInt();
+                    String msg = in.readUTF();
+                    if (retCode == 0) {
+                        System.out.println("File delete successfully on data server: " + sourcePath + " to " + destPath);
+                        return true;
+                    } else {
+                        System.err.println("Failed to delete file on data server: " + msg);
+                        return false;
+                    }
+                }
+            }
+
 
             // 向元数据服务器发送移动文件请求
             boolean metaResult = metaDataClient.moveFile(sourcePath, destPath);
@@ -577,7 +633,7 @@ public class DistributedFileSystemClient {
 //            String[] destNodeInfo = destLocations.get(0).split(":");
 //            String destFileId = destNodeInfo[1];
 
-            // 连接到数据服务器
+              // 连接到数据服务器
 //            try (Connection connection = new Connection(sourceNodeHost, Config.DATA_SERVRE_PORT)) {
 //                DataOutputStream out = connection.getOut();
 //                DataInputStream in = connection.getIn();
@@ -721,22 +777,22 @@ public class DistributedFileSystemClient {
                     }
                     break;
 
-                case "open":
-                    System.out.println("Enter file path:");
-                    String path = scanner.nextLine();
-                    DataInputStream fileStream = client.openFile(path);
-                    if (fileStream != null) {
-                        System.out.println("File opened.");
-                    } else {
-                        System.out.println("Failed to open file.");
-                    }
-                    break;
+//                case "open":
+//                    System.out.println("Enter file path:");
+//                    String path = scanner.nextLine();
+//                    DataInputStream fileStream = client.openFile(path);
+//                    if (fileStream != null) {
+//                        System.out.println("File opened.");
+//                    } else {
+//                        System.out.println("Failed to open file.");
+//                    }
+//                    break;
 
                 case "copy":
+                    System.out.println("Enter source file path:");
                     String copySourcePath = scanner.nextLine().trim();
+                    System.out.println("Enter destination file path:");
                     String copyDestPath = scanner.nextLine().trim();
-                    System.out.println("Enter source file path:"+copySourcePath);
-                    System.out.println("Enter destination file path:"+copyDestPath);
                     if (client.copyFile(copySourcePath, copyDestPath)) {
                         System.out.println("File copied successfully.");
                     } else {
@@ -797,13 +853,13 @@ public class DistributedFileSystemClient {
                     System.out.println(new String(content));
                     break;
 
-                case "close":
-                    // 实现关闭文件的逻辑
-                    System.out.println("Enter file path:");
-                    String closePath = scanner.nextLine().trim();
-                    boolean closeSuccess = client.closeFile(closePath);
-                    System.out.println("Close result: " + (closeSuccess ? "Success" : "Failed"));
-                    break;
+//                case "close":
+//                    // 实现关闭文件的逻辑
+//                    System.out.println("Enter file path:");
+//                    String closePath = scanner.nextLine().trim();
+//                    boolean closeSuccess = client.closeFile(closePath);
+//                    System.out.println("Close result: " + (closeSuccess ? "Success" : "Failed"));
+//                    break;
 
                 case "delete":
                     System.out.println("Enter file path:");

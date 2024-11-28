@@ -713,24 +713,39 @@ public class MetadataServer {
                 throw new IllegalArgumentException("Source file not found or is a directory: " + sourcePath);
             }
 
-            // 检查目标路径是否已存在
-            if (fileSystem.containsKey(destPath)) {
-                throw new IllegalArgumentException("Destination path already exists: " + destPath);
+            // 检查目标路径是否已存在（存在则删除）
+            FileInfo destFileInfo = fileSystem.get(destPath);
+            if (destFileInfo != null && destFileInfo.isDirectory()) {
+                throw new IllegalArgumentException("Destination path is a directory: " + destPath);
+            }else if (destFileInfo != null && !destFileInfo.isDirectory()) {
+                fileSystem.remove(destPath);
+                db.delete(destPath.getBytes());
             }
 
             // 创建目标文件元数据
-            FileInfo destFileInfo = new FileInfo(
-                    destPath,
-                    sourceFileInfo.getOwner(),
-                    false,
-                    fileSystem.get(getParentPath(destPath))
-            );
-            destFileInfo.setFileSize(sourceFileInfo.getFileSize());
-            destFileInfo.setLocations(new ArrayList<>(sourceFileInfo.getLocations())); // 复制存储位置
-
+            FileInfo destFileInfoNew = create(destPath, sourceFileInfo.getOwner(), false);
+            log.info(new Date().toString()+" after createFile." );
+            for (String location : sourceFileInfo.getLocations()) {
+                String nodeName = getNewStorageNode(0); // 分配存储节点
+                String localFileId = UUID.randomUUID().toString(); // 生成唯一文件块 ID
+                destFileInfoNew.getLocations().add(nodeName + ":" + localFileId); // 记录存储位置
+            }
             // 更新元数据
-            fileSystem.put(destPath, destFileInfo);
-            db.put(destPath.getBytes(), serializeFileInfo(destFileInfo)); // 持久化到 RocksDB
+            fileSystem.put(destPath, destFileInfoNew);
+            // 持久化到 RocksDB
+            db.put(destPath.getBytes(), serializeFileInfo(destFileInfoNew));
+//            FileInfo destFileInfoNew = new FileInfo(
+//                    destPath,
+//                    sourceFileInfo.getOwner(),
+//                    false,
+//                    fileSystem.get(getParentPath(destPath))
+//            );
+//            destFileInfoNew.setFileSize(sourceFileInfo.getFileSize());
+//            destFileInfoNew.setLocations(new ArrayList<>(sourceFileInfo.getLocations())); // 复制存储位置
+
+//            // 更新元数据
+//            fileSystem.put(destPath, destFileInfoNew);
+//            db.put(destPath.getBytes(), serializeFileInfo(destFileInfoNew)); // 持久化到 RocksDB
 
             out.writeInt(0); // 成功状态码
             out.writeUTF("File copied successfully.");
@@ -751,10 +766,10 @@ public class MetadataServer {
                 throw new IllegalArgumentException("Source file not found: " + sourcePath);
             }
 
-            // 检查目标路径是否已存在
-            if (fileSystem.containsKey(destPath)) {
-                throw new IllegalArgumentException("Destination path already exists: " + destPath);
-            }
+//            // 检查目标路径是否已存在
+//            if (fileSystem.containsKey(destPath)) {
+//                throw new IllegalArgumentException("Destination path already exists: " + destPath);
+//            }
 
             // 更新元数据
             FileInfo destFileInfo = new FileInfo(

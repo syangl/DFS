@@ -297,12 +297,12 @@ public class MetaServerClient {
 
         // 读取响应
         int retCode = in.readInt();
+        String msg = in.readUTF();
         if (retCode == 0) {
             System.out.println("File copied successfully from " + sourcePath + " to " + destPath);
             return true;
         } else {
-            String errorMsg = in.readUTF();
-            System.err.println("Failed to copy file: " + errorMsg);
+            System.err.println("Failed to copy file: " + msg);
             return false;
         }
     }

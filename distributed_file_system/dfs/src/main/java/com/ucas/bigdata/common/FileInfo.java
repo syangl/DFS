@@ -34,7 +34,7 @@ public class FileInfo implements Serializable { // 文件元数据结构
         this.isDirectory = isDirectory;
         this.fileName = getFileName(path);
         this.parent = parentInfo;
-        this.fileSize = -1;
+        this.fileSize = 0;
         this.creationTime = System.currentTimeMillis();
         this.parent.getChildren().add(this);
     }
