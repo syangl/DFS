@@ -126,7 +126,9 @@ public class MetadataServer {
                 DataOutputStream out = new DataOutputStream(clientSocket.getOutputStream());
                 // 处理客户端请求
                 while (true){
+                    System.out.println("Before read");
                     MetaOpCode op = MetaOpCode.read(in);
+                    System.out.println("After read OpCode: " + op);
                     process(op, in, out);
                 }
             }
@@ -234,17 +236,24 @@ public class MetadataServer {
             boolean isDir = in.readBoolean(); // 是否为目录
             log.info(new Date().toString()+" before createFile." );
             FileInfo fi = create(path,owner,isDir);
-            log.info(new Date().toString()+" after createFile." );
-            String nodeName = getNewStorageNode(0); // 分配存储节点
-            String localFileId = UUID.randomUUID().toString(); // 生成唯一文件块 ID
-            fi.getLocations().add(nodeName + ":" + localFileId); // 记录存储位置
-            // 持久化到 RocksDB
-            db.put(path.getBytes(), serializeFileInfo(fi));
-            // 返回code
-            out.writeInt(0);
-            out.writeUTF(isDir ? "Directory created successfully: " + path : "File created successfully: " + path);
-            out.flush();
-            log.info(new Date().toString()+" createFile 1." );
+            if (fi == null) {
+                out.writeInt(-1);
+                out.writeUTF("File already exists: " + path);
+                out.flush();
+                return;
+            }else {
+                log.info(new Date().toString()+" after createFile." );
+                String nodeName = getNewStorageNode(0); // 分配存储节点
+                String localFileId = UUID.randomUUID().toString(); // 生成唯一文件块 ID
+                fi.getLocations().add(nodeName + ":" + localFileId); // 记录存储位置
+                // 持久化到 RocksDB
+                db.put(path.getBytes(), serializeFileInfo(fi));
+                // 返回code
+                out.writeInt(0);
+                out.writeUTF(isDir ? "Directory created successfully: " + path : "File created successfully: " + path);
+                out.flush();
+                log.info(new Date().toString()+" createFile 1." );
+            }
         } catch (IOException e) {
             e.printStackTrace();
             try {
@@ -258,7 +267,6 @@ public class MetadataServer {
             throw new RuntimeException(e);
         }
         System.out.println(new Date().toString()+" createFile done." );
-
     }
 
 //    // 添加文件元数据
@@ -288,8 +296,8 @@ public class MetadataServer {
             return fileInfo;
         } else {
             System.out.println((isDirectory ? "Directory" : "File") + " " + path + " already exists.");
-            fileInfo = fileSystem.get(path);
-            return fileInfo;
+//            fileInfo = fileSystem.get(path);
+            return null;
         }
     }
 

@@ -79,7 +79,7 @@ public class MetaServerClient {
         return null;
     }
 
-    public String createFile(String path) throws IOException {
+    public Integer createFile(String path) throws IOException {
         DataOutputStream out = connection.getOut();
         DataInputStream in = connection.getIn();
 
@@ -93,11 +93,13 @@ public class MetaServerClient {
 
             // 接收响应
             int retCode = in.readInt();
+            String msg = in.readUTF();
             if (retCode == 0) {
-                return in.readUTF(); // 返回存储节点信息
+                System.out.println("Metadata server success: " + msg);
+                return retCode; // 返回存储节点信息
             } else {
-                System.err.println("Metadata server error: " + in.readUTF());
-                return null;
+                System.err.println("Metadata server error: " + msg);
+                return retCode;
             }
         } catch (IOException e) {
             System.err.println("Error communicating with metadata server: " + e.getMessage());
@@ -212,26 +214,31 @@ public class MetaServerClient {
         }
     }
 
-    public boolean deleteDirectory(String path) throws IOException {
-        DataOutputStream out = connection.getOut();
-        DataInputStream in = connection.getIn();
+    public boolean deleteDirectory(String path) {
+        try {
+            DataOutputStream out = connection.getOut();
+            DataInputStream in = connection.getIn();
 
-        // 发送 DEL_FILE 操作码
-        MetaOpCode.DEL_FILE.write(out);
-        out.writeUTF(path);       // 目录路径
-        out.writeBoolean(true);   // 标记为目录删除
-        out.flush();
+            // 发送 DEL_FILE 操作码
+            MetaOpCode.DEL_FILE.write(out);
+            out.flush();
+            out.writeUTF(path);       // 目录路径
+//            out.writeBoolean(true);   // 标记为目录删除
+            out.flush();
 
-        // 读取响应
-        int retCode = in.readInt();
-        String msg = in.readUTF();
+            // 读取响应
+            int retCode = in.readInt();
+            String msg = in.readUTF();
 
-        if (retCode == 0) {
-            System.out.println("Directory deleted successfully: " + path);
-            return true;
-        } else {
-            System.err.println("Failed to delete directory: " + msg);
-            return false;
+            if (retCode == 0) {
+                System.out.println("Directory deleted successfully: " + path);
+                return true;
+            } else {
+                System.err.println("Failed to delete directory: " + msg);
+                return false;
+            }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -312,12 +319,12 @@ public class MetaServerClient {
 
         // 读取响应
         int retCode = in.readInt();
+        String msg = in.readUTF();
         if (retCode == 0) {
             System.out.println("File moved successfully from " + sourcePath + " to " + destPath);
             return true;
         } else {
-            String errorMsg = in.readUTF();
-            System.err.println("Failed to move file: " + errorMsg);
+            System.err.println("Failed to move file: " + msg);
             return false;
         }
     }

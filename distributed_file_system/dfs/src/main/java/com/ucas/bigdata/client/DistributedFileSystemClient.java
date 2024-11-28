@@ -41,16 +41,23 @@ public class DistributedFileSystemClient {
 
     public boolean createFile(String path) {
         try {
-            // 1. 向元数据服务器发送创建文件请求，返回存储节点信息
-            String nodeAndFileId = metaDataClient.createFile(path);
-            if (nodeAndFileId == null) {
+            // 向元数据服务器发送创建文件请求，返回存储节点信息
+            Integer metaResult = metaDataClient.createFile(path);
+            if (metaResult == -1) {
                 System.err.println("Failed to create file on metadata server: " + path);
                 return false;
             }
 
-            // 2. 解析存储节点信息
-            String[] nodeInfo = nodeAndFileId.split(":");
-            String nodeHost = nodeInfo[0];
+            List<String> locations = metaDataClient.getFileLocations(path);
+            if (locations.isEmpty()) {
+                System.err.println("No storage nodes available for directory: " + path);
+                return false;
+            }
+
+            // 解析存储节点信息
+            String[] nodeInfo = locations.get(0).split(":");
+//            String nodeHost = nodeInfo[0];  TODO
+            String nodeHost = "localhost";
             String fileId = nodeInfo[1];
 
             // 3. 连接数据服务器并初始化文件
@@ -60,7 +67,10 @@ public class DistributedFileSystemClient {
 
                 DataOpCode.CREATE_FILE.write(out); // 发送写文件操作码
                 out.writeUTF(fileId);             // 发送文件 ID
-                out.write(new byte[0]);           // 写入空文件数据
+//                byte[] buffer = new byte[1024];
+                out.writeInt(0);    // 传输的文件总长度
+//                out.write(buffer, 0, 0);           // 写入空文件数据
+                out.write(new byte[0], 0, 0);  // 写入空文件数据
                 out.flush();
 
                 int retCode = in.readInt();
@@ -90,7 +100,8 @@ public class DistributedFileSystemClient {
 
             // 2. 从存储位置中解析第一个 DataServer
             String[] nodeInfo = locations.get(0).split(":");
-            String nodeHost = nodeInfo[0];
+//            String nodeHost = nodeInfo[0]; TODO
+            String nodeHost = "localhost";
             String fileId = nodeInfo[1];
 
             // 3. 与 DataServer 建立连接
@@ -134,7 +145,8 @@ public class DistributedFileSystemClient {
 
             // 2. 连接到数据服务器
             String[] nodeInfo = locations.get(0).split(":");
-            String nodeHost = nodeInfo[0];
+//            String nodeHost = nodeInfo[0];  TODO
+            String nodeHost = "localhost";
             int nodePort = Config.DATA_SERVRE_PORT;
 
             try (Connection connection = new Connection(nodeHost, nodePort)) {
@@ -181,7 +193,11 @@ public class DistributedFileSystemClient {
         try {
 
             // 向元数据服务器发送新建文件请求，返回fileId
-            String fileId = metaDataClient.createFile(path);
+            Integer metaResult = metaDataClient.createFile(path);
+            if (metaResult == -1) {
+                System.err.println("Failed to create file: " + path);
+                return false;
+            }
 
             // 获取存储节点地址
             List<String> locations = metaDataClient.getFileLocations(path);
@@ -190,7 +206,9 @@ public class DistributedFileSystemClient {
                 return false;
             }
             String[] nodeInfo = locations.get(0).split(":");
-            String nodeHost = nodeInfo[0];
+//            String nodeHost = nodeInfo[0];  TODO
+            String fileId = nodeInfo[1];
+            String nodeHost = "localhost";
 
             // 创建套接字连接到数据服务器
             Connection connection = new Connection(nodeHost, Config.DATA_SERVRE_PORT);
@@ -284,7 +302,9 @@ public class DistributedFileSystemClient {
 
             // 2. 从存储位置中解析第一个 DataServer
             String[] nodeInfo = locations.get(0).split(":");
-            String nodeHost = nodeInfo[0];
+//            String nodeHost = nodeInfo[0];  TODO
+            String nodeHost = "localhost";
+
             String fileId = nodeInfo[1];
 
             // 3. 与 DataServer 建立连接
@@ -346,7 +366,8 @@ public class DistributedFileSystemClient {
             // 3. 通知数据服务器删除文件数据
             for (String location : locations) {
                 String[] nodeInfo = location.split(":");
-                String nodeHost = nodeInfo[0];
+//                String nodeHost = nodeInfo[0];  TODO
+                String nodeHost = "localhost";
                 String fileId = nodeInfo[1];
 
                 try (Connection connection = new Connection(nodeHost, Config.DATA_SERVRE_PORT)) {
@@ -378,93 +399,89 @@ public class DistributedFileSystemClient {
 
 
     public boolean createDirectory(String path) throws IOException {
-        // 1. 向元数据服务器发送创建目录请求
+        // 向元数据服务器发送创建目录请求
         boolean metaResult = metaDataClient.createDirectory(path);
         if (!metaResult) {
             System.err.println("Failed to create directory on metadata server: " + path);
             return false;
         }
 
-        // 2. 获取存储节点地址
-        List<String> locations = metaDataClient.getFileLocations(path);
-        if (locations.isEmpty()) {
-            System.err.println("No storage nodes available for directory: " + path);
-            return false;
-        }
-        String[] nodeInfo = locations.get(0).split(":");
-        String nodeHost = nodeInfo[0];
-        //TODO 修改为本地
-        nodeHost="localhost";
-
-        // 3. 连接到数据服务器
-        try (Connection connection = new Connection(nodeHost, Config.DATA_SERVRE_PORT)) {
-            DataOutputStream out = connection.getOut();
-            DataInputStream in = connection.getIn();
-            // 4. 向数据服务器发送创建目录请求
-            DataOpCode.CREATE_DIRECTORY.write(out); // 发送操作码
-            out.writeUTF(path);               // 发送目录路径（直接用路径作为标识）
-            out.flush();
-            // 5. 接收数据服务器的响应
-            int retCode = in.readInt();
-            String msg = in.readUTF();
-
-            if (retCode == 0) {
-                System.out.println("Directory created successfully on data server: " + path);
-                return true;
-            } else {
-                System.err.println("Failed to create directory on data server: " + msg);
-                return false;
-            }
-        } catch (IOException e) {
-            System.err.println("Failed to connect to data server: " + nodeHost);
-            e.printStackTrace();
-            return false;
-        }
+//        // 获取存储节点地址
+//        List<String> locations = metaDataClient.getFileLocations(path);
+//        if (locations.isEmpty()) {
+//            System.err.println("No storage nodes available for directory: " + path);
+//            return false;
+//        }
+//        String[] nodeInfo = locations.get(0).split(":");
+////        String nodeHost = nodeInfo[0];  TODO
+//        String nodeHost="localhost";
+//
+//        // 3. 连接到数据服务器
+//        try (Connection connection = new Connection(nodeHost, Config.DATA_SERVRE_PORT)) {
+//            DataOutputStream out = connection.getOut();
+//            DataInputStream in = connection.getIn();
+//            // 4. 向数据服务器发送创建目录请求
+//            DataOpCode.CREATE_DIRECTORY.write(out); // 发送操作码
+//            out.writeUTF(path);               // 发送目录路径（直接用路径作为标识）
+//            out.flush();
+//            // 5. 接收数据服务器的响应
+//            int retCode = in.readInt();
+//            String msg = in.readUTF();
+//
+//            connection.close();
+//            if (retCode == 0) {
+//                System.out.println("Directory created successfully on data server: " + path);
+//                return true;
+//            } else {
+//                System.err.println("Failed to create directory on data server: " + msg);
+//                return false;
+//            }
+//        } catch (IOException e) {
+//            System.err.println("Failed to connect to data server: " + nodeHost);
+//            e.printStackTrace();
+//            return false;
+//        }
+        return true;
     }
 
     public boolean deleteDirectory(String path) {
-        try {
-            boolean metaResult = metaDataClient.deleteDirectory(path);
-            if (!metaResult) {
-                System.err.println("Failed to delete directory on metadata server: " + path);
-                return false;
-            }
+        // 先读取元数据服务器上的目录信息
+        List<String> locations = metaDataClient.getFileLocations(path);
 
-            List<String> locations = metaDataClient.getFileLocations(path);
-            if (locations.isEmpty()) {
-                System.err.println("No storage nodes available for directory: " + path);
-                return true; // 如果没有存储节点，说明只需删除元数据即可
-            }
-
-            for (String location : locations) {
-                String[] nodeInfo = location.split(":");
-                String nodeHost = nodeInfo[0];
-                try (Connection connection = new Connection(nodeHost, Config.DATA_SERVRE_PORT)) {
-                    DataOutputStream out = connection.getOut();
-                    DataInputStream in = connection.getIn();
-
-                    DataOpCode.DELETE_DIRECTORY.write(out); // 发送删除目录操作码
-                    out.writeUTF(path); // 发送目录路径
-                    out.flush();
-
-                    int retCode = in.readInt();
-                    String msg = in.readUTF();
-                    if (retCode != 0) {
-                        System.err.println("Failed to delete directory on node " + nodeHost + ": " + msg);
-                    } else {
-                        System.out.println("Directory deleted successfully on node " + nodeHost + ": " + msg);
-                    }
-                } catch (IOException e) {
-                    System.err.println("Failed to connect to data server: " + nodeHost);
-                    e.printStackTrace();
-                }
-            }
-            return true;
-        } catch (IOException e) {
-            System.err.println("Failed to delete directory: " + path);
-            e.printStackTrace();
+        // 再删除元数据服务器上的目录信息（如果先删除meta数据，则后面就获取不到locations导致无法删除datanode上的目录了）
+        boolean metaResult = metaDataClient.deleteDirectory(path);
+        if (!metaResult) {
+            System.err.println("Failed to delete directory on metadata server: " + path);
             return false;
         }
+
+        for (String location : locations) {
+            String[] nodeInfo = location.split(":");
+//                String nodeHost = nodeInfo[0]; TODO
+            String nodeHost = "localhost";
+            try (Connection connection = new Connection(nodeHost, Config.DATA_SERVRE_PORT)) {
+                DataOutputStream out = connection.getOut();
+                DataInputStream in = connection.getIn();
+
+                DataOpCode.DELETE_DIRECTORY.write(out); // 发送删除目录操作码
+                out.writeUTF(path); // 发送目录路径
+                out.flush();
+
+                int retCode = in.readInt();
+                String msg = in.readUTF();
+
+                connection.close();
+                if (retCode != 0) {
+                    System.err.println("Failed to delete directory on node " + nodeHost + ": " + msg);
+                } else {
+                    System.out.println("Directory deleted successfully on node " + nodeHost + ": " + msg);
+                }
+            } catch (IOException e) {
+                System.err.println("Failed to connect to data server: " + nodeHost);
+                e.printStackTrace();
+            }
+        }
+        return true;
     }
 
     public FileInfo getFileInfo(String path) {
@@ -492,7 +509,8 @@ public class DistributedFileSystemClient {
                 return false;
             }
             String[] nodeInfo = locations.get(0).split(":");
-            String nodeHost = nodeInfo[0];
+//            String nodeHost = nodeInfo[0];  TODO
+            String nodeHost = "localhost";
             String destFileId = nodeInfo[1];
 
             // 3. 与 DataServer 建立连接
@@ -531,53 +549,64 @@ public class DistributedFileSystemClient {
 
     public boolean moveFile(String sourcePath, String destPath) {
         try {
-            // 1. 向元数据服务器发送移动文件请求
+//            // 获取源文件的存储位置（源文件在meta删除之前获取）
+//            List<String> sourceLocations = metaDataClient.getFileLocations(sourcePath);
+//            if (sourceLocations.isEmpty()) {
+//                System.err.println("No storage nodes found for file: " + sourcePath);
+//                return false;
+//            }
+//            String[] sourceNodeInfo = sourceLocations.get(0).split(":");
+////            String sourceNodeHost = sourceNodeInfo[0];  TODO
+//            String sourceFileId = sourceNodeInfo[1];
+//            // 本地测试使用 localhost
+//            String sourceNodeHost = "localhost";
+
+            // 向元数据服务器发送移动文件请求
             boolean metaResult = metaDataClient.moveFile(sourcePath, destPath);
             if (!metaResult) {
                 System.err.println("Failed to move file on metadata server: " + sourcePath + " to " + destPath);
                 return false;
             }
 
-            // 2. 获取源文件的存储位置
-            List<String> locations = metaDataClient.getFileLocations(sourcePath);
-            if (locations.isEmpty()) {
-                System.err.println("No storage nodes found for file: " + sourcePath);
-                return false;
-            }
+//            // 获取目标文件的存储位置（目标文件在meta创建之后获取）
+//            List<String> destLocations = metaDataClient.getFileLocations(destPath);
+//            if (destLocations.isEmpty()) {
+//                System.err.println("No storage nodes found for destination path: " + destPath);
+//                return false;
+//            }
+//            String[] destNodeInfo = destLocations.get(0).split(":");
+//            String destFileId = destNodeInfo[1];
 
-            String[] nodeInfo = locations.get(0).split(":");
-            String nodeHost = nodeInfo[0];
-            // 本地测试使用 localhost
-            nodeHost = "localhost";
-
-            // 3. 连接到数据服务器
-            try (Connection connection = new Connection(nodeHost, Config.DATA_SERVRE_PORT)) {
-                DataOutputStream out = connection.getOut();
-                DataInputStream in = connection.getIn();
-
-                // 4. 向数据服务器发送文件移动请求
-                DataOpCode.MOVE_FILE.write(out);
-                out.writeUTF(sourcePath); // 发送源路径
-                out.writeUTF(destPath);   // 发送目标路径
-                out.flush();
-
-                // 5. 接收数据服务器的响应
-                int retCode = in.readInt();
-                String msg = in.readUTF();
-
-                if (retCode == 0) {
-                    System.out.println("File moved successfully on data server: " + sourcePath + " to " + destPath);
-                    return true;
-                } else {
-                    System.err.println("Failed to move file on data server: " + msg);
-                    return false;
-                }
-            }
+            // 连接到数据服务器
+//            try (Connection connection = new Connection(sourceNodeHost, Config.DATA_SERVRE_PORT)) {
+//                DataOutputStream out = connection.getOut();
+//                DataInputStream in = connection.getIn();
+//
+//                // 向数据服务器发送文件移动请求
+//                DataOpCode.MOVE_FILE.write(out);
+////                out.writeUTF(sourcePath); // 发送源路径
+////                out.writeUTF(destPath);   // 发送目标路径
+//                out.writeUTF(sourceFileId);
+//                out.writeUTF(destFileId);
+//                out.flush();
+//
+//                // 接收数据服务器的响应
+//                int retCode = in.readInt();
+//                String msg = in.readUTF();
+//                if (retCode == 0) {
+//                    System.out.println("File moved successfully on data server: " + sourcePath + " to " + destPath);
+//                    return true;
+//                } else {
+//                    System.err.println("Failed to move file on data server: " + msg);
+//                    return false;
+//                }
+//            }
         } catch (IOException e) {
             System.err.println("Error during moveFile operation: " + e.getMessage());
             e.printStackTrace();
             return false;
         }
+        return true;
     }
 
     // 与存储节点断开连接
@@ -639,8 +668,8 @@ public class DistributedFileSystemClient {
 
                 case "move":
                     System.out.println("Enter source file path:");
-                    System.out.println("Enter destination file path:");
                     String moveSourcePath = scanner.nextLine().trim();
+                    System.out.println("Enter destination file path:");
                     String moveDestPath = scanner.nextLine().trim();
                     if (client.moveFile(moveSourcePath, moveDestPath)) {
                         System.out.println("File moved successfully.");

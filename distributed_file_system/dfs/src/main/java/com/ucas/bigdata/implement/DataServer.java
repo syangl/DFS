@@ -12,6 +12,8 @@ import sun.security.x509.IPAddressName;
 
 import java.io.*;
 import java.net.*;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Date;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -47,7 +49,7 @@ public class DataServer {
     private void serve() throws IOException {
         System.out.println("Data Server is running...");
         isRunning = true;
-        heartBeat.start();
+//        heartBeat.start(); TODO
         while (isRunning) {
             // 接受客户端连接
             Socket clientSocket = serverSocket.accept();
@@ -70,10 +72,10 @@ public class DataServer {
                 DataInputStream in = new DataInputStream(clientSocket.getInputStream());
                 DataOutputStream out = new DataOutputStream(clientSocket.getOutputStream());
                 // 处理客户端请求
-                while (true){
+//                while (true){
                     DataOpCode op = DataOpCode.read(in);
                     process(op, in, out);
-                }
+//                }
             }
             catch (IOException e) {
                 System.err.println("Error processing client request: " + e.getMessage());
@@ -148,11 +150,11 @@ public class DataServer {
         FileOutputStream fout = null;
 
         try {
-            // 1. 读取文件 ID 和文件路径
+            // 读取文件 ID 和文件路径
             String fileId = in.readUTF();
             String path = storage_path + File.separator + fileId;
 
-            // 2. 创建文件
+            // 创建文件
             File file = new File(path);
             if (file.exists()) {
                 throw new IOException("File already exists: " + path);
@@ -165,13 +167,15 @@ public class DataServer {
                 throw new IOException("Failed to create file: " + path);
             }
 
-            // 3. 写入文件数据
+            // 写入文件数据
+            int fileSumLength = in.readInt();  // 读取文件总长度
+            int totalbytesRead = 0;
+            int bytesRead;
             byte[] buffer = new byte[1024];
-            int bytesRead = in.read(buffer);
-            while (bytesRead > 0) {
+            while (totalbytesRead < fileSumLength) {
+                bytesRead = in.read(buffer, 0, Math.min(fileSumLength-totalbytesRead, 1024));
                 fout.write(buffer, 0, bytesRead);
-                if (bytesRead < 1024) break;
-                bytesRead = in.read(buffer);
+                totalbytesRead += bytesRead;
             }
             fout.flush();
         } catch (IOException e) {
@@ -180,7 +184,8 @@ public class DataServer {
             msg = "Error creating file: " + e.getMessage();
         } finally {
             try {
-                if (fout != null) fout.close();
+                if (fout != null)
+                    fout.close();
                 // 发送响应
                 out.writeInt(retCode);
                 out.writeUTF(msg);
