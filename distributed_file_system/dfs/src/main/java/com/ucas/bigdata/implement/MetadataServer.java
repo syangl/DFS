@@ -163,9 +163,9 @@ public class MetadataServer {
             case CREATE_FILE:
                 createFile(in, out);
                 break;
-            case RENAME_FILE:
-                //@todo
-                break;
+//            case RENAME_FILE:
+//                //@todo
+//                break;
             case DEL_FILE:
                 delete(in, "dfs", out);  // 默认用户 "dfs"
                 break;
@@ -180,6 +180,9 @@ public class MetadataServer {
                 break;
             case GET_FILE_SIZE:
                 handleGetFileSize(in, out);
+                break;
+            case SET_FILE_SIZE:
+                handleSetFileSize(in, out);
                 break;
             case READ_FILE:
                 handleDownloadFile(in, out);
@@ -633,6 +636,29 @@ public class MetadataServer {
 
             out.writeInt(0); // 成功状态码
             out.writeLong(size); // 返回大小
+        } catch (IllegalArgumentException e) {
+            out.writeInt(-1); // 错误状态码
+            out.writeUTF(e.getMessage());
+        } catch (Exception e) {
+            out.writeInt(-1);
+            out.writeUTF("Internal server error: " + e.getMessage());
+        }
+    }
+
+    private void handleSetFileSize(DataInputStream in, DataOutputStream out) throws IOException {
+        String path = in.readUTF(); // 读取路径
+
+        try {
+            FileInfo fileInfo = fileSystem.get(path);
+            if (fileInfo == null) {
+                throw new IllegalArgumentException("File or directory not found: " + path);
+            }
+
+            long size= in.readLong();
+            fileInfo.setFileSize(size); // 文件大小
+
+            out.writeInt(0); // 成功状态码
+            out.writeUTF( "File size set successfully: " + path); // 返回大小
         } catch (IllegalArgumentException e) {
             out.writeInt(-1); // 错误状态码
             out.writeUTF(e.getMessage());

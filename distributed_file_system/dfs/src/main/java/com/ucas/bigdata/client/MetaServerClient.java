@@ -324,6 +324,23 @@ public class MetaServerClient {
         }
     }
 
+    public boolean setFileSize(String path,long size) throws IOException {
+        DataOutputStream out = connection.getOut();
+        DataInputStream in = connection.getIn();
+        MetaOpCode.SET_FILE_SIZE.write(out);
+        out.writeUTF(path);
+        out.writeLong(size);
+        out.flush();
+        int retCode = in.readInt();
+        String errorMsg = in.readUTF();
+        if (retCode == 0) {
+            return true; // 返回大小
+        } else {
+            System.err.println("Failed to get file size: " + errorMsg);
+            return false;
+        }
+    }
+
     public FileInfo getFileInfo(String path) throws IOException {
         DataOutputStream out = connection.getOut();
         DataInputStream in = connection.getIn();

@@ -218,6 +218,13 @@ public class DistributedFileSystemClient {
             String fileId = nodeInfo[1];
             String nodeHost = "localhost";
 
+            boolean setResult = metaDataClient.setFileSize(path,data.length);
+            if(!setResult){
+                System.err.println("Failed to set file size: " + path);
+                return false;
+            }
+
+
             // 创建套接字连接到数据服务器
             Connection connection = new Connection(nodeHost, Config.DATA_SERVRE_PORT);
 
@@ -225,6 +232,7 @@ public class DistributedFileSystemClient {
             DataOpCode.WRITE_FILE.write(connection.getOut());//0.发送写文件的OPCode
             connection.writeUTF(fileId);//1.发送文件ID
             connection.write(data);//2.遍历写入
+
 
             int retCode = connection.readInt();//3.回写返回码
             String msg = connection.readUTF();//4.回写消息
@@ -590,17 +598,6 @@ public class DistributedFileSystemClient {
 
     public boolean moveFile(String sourcePath, String destPath) {
         try {
-//            // 获取源文件的存储位置（源文件在meta删除之前获取）
-//            List<String> sourceLocations = metaDataClient.getFileLocations(sourcePath);
-//            if (sourceLocations.isEmpty()) {
-//                System.err.println("No storage nodes found for file: " + sourcePath);
-//                return false;
-//            }
-//            String[] sourceNodeInfo = sourceLocations.get(0).split(":");
-////            String sourceNodeHost = sourceNodeInfo[0];  TODO
-//            String sourceFileId = sourceNodeInfo[1];
-//            // 本地测试使用 localhost
-//            String sourceNodeHost = "localhost";
             // mv f1 to f2，如果f2存在，删除f2原来的fileId文件并替换meta的fileInfo为f2的path，否则直接替换meta的fileInfo为f2的path即可
             // 获取目标文件的存储位置
             List<String> destLocations = metaDataClient.getFileLocations(destPath);
@@ -624,7 +621,6 @@ public class DistributedFileSystemClient {
                     String msg = in.readUTF();
                     if (retCode == 0) {
                         System.out.println("File delete successfully on data server: " + sourcePath + " to " + destPath);
-                        return true;
                     } else {
                         System.err.println("Failed to delete file on data server: " + msg);
                         return false;
@@ -632,47 +628,12 @@ public class DistributedFileSystemClient {
                 }
             }
 
-
             // 向元数据服务器发送移动文件请求
             boolean metaResult = metaDataClient.moveFile(sourcePath, destPath);
             if (!metaResult) {
                 System.err.println("Failed to move file on metadata server: " + sourcePath + " to " + destPath);
                 return false;
             }
-
-//            // 获取目标文件的存储位置（目标文件在meta创建之后获取）
-//            List<String> destLocations = metaDataClient.getFileLocations(destPath);
-//            if (destLocations.isEmpty()) {
-//                System.err.println("No storage nodes found for destination path: " + destPath);
-//                return false;
-//            }
-//            String[] destNodeInfo = destLocations.get(0).split(":");
-//            String destFileId = destNodeInfo[1];
-
-            // 连接到数据服务器
-//            try (Connection connection = new Connection(sourceNodeHost, Config.DATA_SERVRE_PORT)) {
-//                DataOutputStream out = connection.getOut();
-//                DataInputStream in = connection.getIn();
-//
-//                // 向数据服务器发送文件移动请求
-//                DataOpCode.MOVE_FILE.write(out);
-////                out.writeUTF(sourcePath); // 发送源路径
-////                out.writeUTF(destPath);   // 发送目标路径
-//                out.writeUTF(sourceFileId);
-//                out.writeUTF(destFileId);
-//                out.flush();
-//
-//                // 接收数据服务器的响应
-//                int retCode = in.readInt();
-//                String msg = in.readUTF();
-//                if (retCode == 0) {
-//                    System.out.println("File moved successfully on data server: " + sourcePath + " to " + destPath);
-//                    return true;
-//                } else {
-//                    System.err.println("Failed to move file on data server: " + msg);
-//                    return false;
-//                }
-//            }
         } catch (IOException e) {
             System.err.println("Error during moveFile operation: " + e.getMessage());
             e.printStackTrace();
@@ -890,14 +851,6 @@ public class DistributedFileSystemClient {
                     } else {
                         remotePath=client.cur_dir+"/"+remotePath;
                     }
-                    if (localPath.charAt(0) == '/' ) {
-                        localPath = localPath.substring(1);
-                    }
-                    if (client.cur_dir=="/"){
-                        localPath= "/"+localPath;
-                    } else {
-                        localPath=client.cur_dir+"/"+localPath;
-                    }
                     if (client.downloadFile(remotePath, localPath)) {
                         System.out.println("Download successful.");
                     } else {
@@ -917,7 +870,6 @@ public class DistributedFileSystemClient {
 //                    break;
 
                 case "copy":
-
                     System.out.println("Enter source file path:");
                     String copySourcePath = scanner.nextLine().trim();
                     System.out.println("Enter destination file path:");
