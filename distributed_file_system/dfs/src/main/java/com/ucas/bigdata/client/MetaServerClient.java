@@ -98,11 +98,10 @@ public class MetaServerClient {
             if (pathlist.isEmpty() && path.equals("/")) {
                 pathlist.add("/");
             }
-            System.out.println("123465498798321"+pathlist.get(0));
         for (int i=0 ; i<pathlist.size() ; i++){
                 // 发送 CREATE_FILE 操作码
             String specificPath = pathlist.get(i);
-            if (i!=pathlist.size()-1) {
+            if (i==pathlist.size()-1) {
                 MetaOpCode.CREATE_FILE.write(out);
                 out.writeUTF(specificPath);       // 文件路径
                 out.writeUTF(Config.USER); // 用户
@@ -360,12 +359,12 @@ public class MetaServerClient {
 
         // 读取响应
         int retCode = in.readInt();
+        String msg = in.readUTF();
         if (retCode == 0) {
             System.out.println("File copied successfully from " + sourcePath + " to " + destPath);
             return true;
         } else {
-            String errorMsg = in.readUTF();
-            System.err.println("Failed to copy file: " + errorMsg);
+            System.err.println("Failed to copy file: " + msg);
             return false;
         }
     }

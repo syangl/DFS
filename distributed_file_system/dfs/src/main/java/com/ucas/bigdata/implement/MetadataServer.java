@@ -44,7 +44,7 @@ public class MetadataServer {
         storageNodes.put("dfs102", new StorageNode("dfs102"));
         storageNodes.put("dfs103", new StorageNode("dfs103"));
         // 初始化根目录（文件系统的起点）
-        fileSystem.put("/", new FileInfo(null, "/", true,0l,"root", 0l));
+        fileSystem.put("/", new FileInfo("root", "/", true,0l,"root", 0l));
         try {
             serverSocket = new ServerSocket(Config.META_SERVRE_PORT);
             threadPool = Executors.newFixedThreadPool(100);
@@ -412,21 +412,46 @@ public class MetadataServer {
             this.storageNodes.put(sn.getName(),sn);
     }
 
+    private boolean isDirectChild(String parentDir, String filePath) {
+        // 根目录的直接子目录或文件，不包含多级子路径
+        if (parentDir.equals("/")) {
+            if (filePath.startsWith("/") && filePath.substring(1).indexOf("/") == -1) {
+                return true; // 只有一级路径
+            }
+        } else if (filePath.startsWith(parentDir)) {
+            String remainingPath = filePath.substring(parentDir.length());
+            if (!remainingPath.contains("/")) {
+                return true; // 直接子文件或目录
+            }
+        }
+        return false;
+    }
 
     private void listFile(DataInputStream in, DataOutputStream out) {
         try {
             List<String> fileList = new ArrayList<String>();
+            List<String> fileList1 = new ArrayList<String>();
             String cur_dir = in.readUTF();
-            FileInfo fileInfo = getFileInfo(cur_dir);
-            if(fileInfo != null && fileInfo.getChildren() != null){
-                for(FileInfo ch:fileInfo.getChildren()){
-                    fileList.add(ch.getFileName());
+            for (FileInfo fileInfo : fileSystem.values()) {
+                fileList.add(fileInfo.getPath()); // 获取 path 并加入到列表中
+            }
+            if (!cur_dir.endsWith("/") && !cur_dir.equals("/")) {
+                cur_dir = cur_dir + "/";
+            }
+            for (String filePath : fileList) {
+                if (filePath.equals("/")) {
+                    continue; // 跳过根目录
+                }
+                // 如果路径等于 curDir 的直接子文件或子目录
+                if (isDirectChild(cur_dir, filePath)) {
+                    fileList1.add(filePath);
                 }
             }
-            int size = fileList.size();
+
+            int size = fileList1.size();
             out.writeInt(size);
             if(size > 0) {
-                for (String name : fileList) {
+                for (String name : fileList1) {
                     out.writeUTF(name);
                     out.flush();
                 }
@@ -712,24 +737,39 @@ public class MetadataServer {
                 throw new IllegalArgumentException("Source file not found or is a directory: " + sourcePath);
             }
 
-            // 检查目标路径是否已存在
-            if (fileSystem.containsKey(destPath)) {
-                throw new IllegalArgumentException("Destination path already exists: " + destPath);
+            // 检查目标路径是否已存在（存在则删除）
+            FileInfo destFileInfo = fileSystem.get(destPath);
+            if (destFileInfo != null && destFileInfo.isDirectory()) {
+                throw new IllegalArgumentException("Destination path is a directory: " + destPath);
+            }else if (destFileInfo != null && !destFileInfo.isDirectory()) {
+                fileSystem.remove(destPath);
+                db.delete(destPath.getBytes());
             }
 
             // 创建目标文件元数据
-            FileInfo destFileInfo = new FileInfo(
-                    destPath,
-                    sourceFileInfo.getOwner(),
-                    false,
-                    fileSystem.get(getParentPath(destPath))
-            );
-            destFileInfo.setFileSize(sourceFileInfo.getFileSize());
-            destFileInfo.setLocations(new ArrayList<>(sourceFileInfo.getLocations())); // 复制存储位置
-
+            FileInfo destFileInfoNew = create(destPath, sourceFileInfo.getOwner(), false);
+            log.info(new Date().toString()+" after createFile." );
+            for (String location : sourceFileInfo.getLocations()) {
+                String nodeName = getNewStorageNode(0); // 分配存储节点
+                String localFileId = UUID.randomUUID().toString(); // 生成唯一文件块 ID
+                destFileInfoNew.getLocations().add(nodeName + ":" + localFileId); // 记录存储位置
+            }
             // 更新元数据
-            fileSystem.put(destPath, destFileInfo);
-            db.put(destPath.getBytes(), serializeFileInfo(destFileInfo)); // 持久化到 RocksDB
+            fileSystem.put(destPath, destFileInfoNew);
+            // 持久化到 RocksDB
+            db.put(destPath.getBytes(), serializeFileInfo(destFileInfoNew));
+//            FileInfo destFileInfoNew = new FileInfo(
+//                    destPath,
+//                    sourceFileInfo.getOwner(),
+//                    false,
+//                    fileSystem.get(getParentPath(destPath))
+//            );
+//            destFileInfoNew.setFileSize(sourceFileInfo.getFileSize());
+//            destFileInfoNew.setLocations(new ArrayList<>(sourceFileInfo.getLocations())); // 复制存储位置
+
+//            // 更新元数据
+//            fileSystem.put(destPath, destFileInfoNew);
+//            db.put(destPath.getBytes(), serializeFileInfo(destFileInfoNew)); // 持久化到 RocksDB
 
             out.writeInt(0); // 成功状态码
             out.writeUTF("File copied successfully.");
@@ -750,10 +790,10 @@ public class MetadataServer {
                 throw new IllegalArgumentException("Source file not found: " + sourcePath);
             }
 
-            // 检查目标路径是否已存在
-            if (fileSystem.containsKey(destPath)) {
-                throw new IllegalArgumentException("Destination path already exists: " + destPath);
-            }
+//            // 检查目标路径是否已存在
+//            if (fileSystem.containsKey(destPath)) {
+//                throw new IllegalArgumentException("Destination path already exists: " + destPath);
+//            }
 
             // 更新元数据
             FileInfo destFileInfo = new FileInfo(
