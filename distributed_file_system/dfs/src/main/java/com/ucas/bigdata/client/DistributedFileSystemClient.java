@@ -39,13 +39,25 @@ public class DistributedFileSystemClient {
         metaDataClient.close();
     }
 
+
+    private boolean checkInfo(String relPath) throws IOException {
+        FileInfo info = metaDataClient.getFileInfo(relPath);
+        if (info == null) {
+            System.err.println("No storage nodes available for directory: " + relPath);
+            return false;
+        } else {
+            System.out.println("File info: " + info.serialize());
+            return true;
+        }
+    }
+
     public boolean createFile(String path) {
         try {
             // 向元数据服务器发送创建文件请求，返回存储节点信息
             Integer metaResult = metaDataClient.createFile(path);
             if (metaResult == -1) {
                 System.err.println("Failed to create file on metadata server: " + path);
-                return false;
+//                return false;
             }
 
             List<String> locations = metaDataClient.getFileLocations(path);
@@ -75,6 +87,7 @@ public class DistributedFileSystemClient {
 
                 int retCode = in.readInt();
                 String msg = in.readUTF();
+                connection.close();
                 if (retCode == 0) {
                     System.out.println("File created successfully on data server: " + path);
                     return true;
@@ -147,6 +160,7 @@ public class DistributedFileSystemClient {
             String[] nodeInfo = locations.get(0).split(":");
 //            String nodeHost = nodeInfo[0];  TODO
             String nodeHost = "localhost";
+            String fileId = nodeInfo[1];
             int nodePort = Config.DATA_SERVRE_PORT;
 
             try (Connection connection = new Connection(nodeHost, nodePort)) {
@@ -155,12 +169,13 @@ public class DistributedFileSystemClient {
 
                 // 3. 发送 READ_FILE 请求
                 DataOpCode.READ_FILE.write(out);
-                out.writeUTF(path);  // 文件路径
+                out.writeUTF(fileId);  // 文件路径
                 out.writeLong(offset); // 起始位置
                 out.flush();
 
                 // 4. 接收响应
                 int retCode = in.readInt();
+                String msg = in.readUTF();
                 if (retCode != 0) {
                     System.err.println("Failed to read file: " + in.readUTF());
                     return null;
@@ -174,7 +189,7 @@ public class DistributedFileSystemClient {
                     in.readFully(buffer);
                     bos.write(buffer);
                 }
-
+                connection.close();
                 return bos.toByteArray();
             }
         } catch (IOException e) {
@@ -349,21 +364,21 @@ public class DistributedFileSystemClient {
 
     public boolean deleteFile(String path) {
         try {
-            // 1. 通知元数据服务器删除文件元数据
-            boolean metaDeleteSuccess = metaDataClient.deleteFile(path);
-            if (!metaDeleteSuccess) {
-                System.err.println("Failed to delete file metadata: " + path);
-                return false;
-            }
-
-            // 2. 获取文件存储位置
+            // 获取文件存储位置
             List<String> locations = metaDataClient.getFileLocations(path);
             if (locations.isEmpty()) {
                 System.err.println("No storage nodes found for file: " + path);
                 return true; // 如果没有存储位置，说明文件数据可能已被清理
             }
 
-            // 3. 通知数据服务器删除文件数据
+            // 通知元数据服务器删除文件元数据
+            boolean metaDeleteSuccess = metaDataClient.deleteFile(path);
+            if (!metaDeleteSuccess) {
+                System.err.println("Failed to delete file metadata: " + path);
+                return false;
+            }
+
+            // 通知数据服务器删除文件数据
             for (String location : locations) {
                 String[] nodeInfo = location.split(":");
 //                String nodeHost = nodeInfo[0];  TODO
@@ -380,6 +395,7 @@ public class DistributedFileSystemClient {
 
                     int retCode = in.readInt();
                     String msg = in.readUTF();
+                    connection.close();
                     if (retCode == 0) {
                         System.out.println("File deleted successfully on node " + nodeHost + ": " + msg);
                     } else {
@@ -486,6 +502,11 @@ public class DistributedFileSystemClient {
 
     public FileInfo getFileInfo(String path) {
         try {
+            List<String> locations = metaDataClient.getFileLocations(path);
+            if (locations == null || locations.isEmpty()) {
+                System.err.println("No storage nodes available for file: " + path);
+                return null;
+            }
             return metaDataClient.getFileInfo(path); // 调用 MetaServerClient 的逻辑
         } catch (IOException e) {
             System.err.println("Failed to get file info for: " + path);
@@ -659,7 +680,15 @@ public class DistributedFileSystemClient {
                 case "create":
                     System.out.print("Enter file name: ");
                     String filePath = scanner.nextLine().trim();
-                    if (client.createFile(filePath)) {
+                    if (filePath.charAt(0) == '/' ) {
+                        filePath = filePath.substring(1);
+                    }
+                    if (client.cur_dir=="/"){
+                        filePath= "/"+filePath;
+                    } else {
+                        filePath=client.cur_dir+"/"+filePath;
+                    }
+                    if (client.createFile( filePath)) {
                         System.out.println("File created: " + filePath);
                     } else {
                         System.out.println("Failed to create file: " + filePath);
@@ -671,6 +700,23 @@ public class DistributedFileSystemClient {
                     String moveSourcePath = scanner.nextLine().trim();
                     System.out.println("Enter destination file path:");
                     String moveDestPath = scanner.nextLine().trim();
+                    if (moveSourcePath.charAt(0) == '/' ) {
+                        moveSourcePath = moveSourcePath.substring(1);
+                    }
+                    if (client.cur_dir=="/"){
+                        moveSourcePath= "/"+moveSourcePath;
+                    } else {
+                        moveSourcePath=client.cur_dir+"/"+moveSourcePath;
+                    }
+
+                    if (moveDestPath.charAt(0) == '/' ) {
+                        moveDestPath = moveDestPath.substring(1);
+                    }
+                    if (client.cur_dir=="/"){
+                        moveDestPath= "/"+moveDestPath;
+                    } else {
+                        moveDestPath=client.cur_dir+"/"+moveDestPath;
+                    }
                     if (client.moveFile(moveSourcePath, moveDestPath)) {
                         System.out.println("File moved successfully.");
                     } else {
@@ -681,6 +727,15 @@ public class DistributedFileSystemClient {
                 case "mkdir":
                     System.out.println("Enter directory path:");
                     String mkdirDirPath = scanner.nextLine().trim();
+                    if (mkdirDirPath.charAt(0) == '/' ) {
+                        mkdirDirPath = mkdirDirPath.substring(1);
+                    }
+                    if (client.cur_dir=="/"){
+                        mkdirDirPath= "/"+mkdirDirPath;
+                    } else {
+                        mkdirDirPath=client.cur_dir+"/"+mkdirDirPath;
+                    }
+
                     if (client.createDirectory(mkdirDirPath)) {
                         System.out.println("Directory created: " + mkdirDirPath);
                     } else {
@@ -691,6 +746,14 @@ public class DistributedFileSystemClient {
                 case "rmdir":
                     System.out.println("Enter directory path:");
                     String rmdirDirPath = scanner.nextLine().trim();
+                    if (rmdirDirPath.charAt(0) == '/' ) {
+                        rmdirDirPath = rmdirDirPath.substring(1);
+                    }
+                    if (client.cur_dir=="/"){
+                        rmdirDirPath= "/"+rmdirDirPath;
+                    } else {
+                        rmdirDirPath=client.cur_dir+"/"+rmdirDirPath;
+                    }
                     if (client.deleteDirectory(rmdirDirPath)) {
                         System.out.println("Directory deleted: " + rmdirDirPath);
                     } else {
@@ -701,6 +764,14 @@ public class DistributedFileSystemClient {
                 case "size":
                     System.out.println("Enter file or directory path:");
                     String sizeDirPath = scanner.nextLine().trim();
+                    if (sizeDirPath.charAt(0) == '/' ) {
+                        sizeDirPath = sizeDirPath.substring(1);
+                    }
+                    if (client.cur_dir=="/"){
+                        sizeDirPath= "/"+sizeDirPath;
+                    } else {
+                        sizeDirPath=client.cur_dir+"/"+sizeDirPath;
+                    }
                     long size = client.getFileSize(sizeDirPath);
                     if (size >= 0) {
                         System.out.println("Size of " + sizeDirPath + ": " + size + " bytes");
@@ -714,6 +785,22 @@ public class DistributedFileSystemClient {
                     String remotePath = scanner.nextLine().trim();
                     System.out.println("Enter local file path:");
                     String localPath = scanner.nextLine().trim();
+                    if (remotePath.charAt(0) == '/' ) {
+                        remotePath = remotePath.substring(1);
+                    }
+                    if (client.cur_dir=="/"){
+                        remotePath= "/"+remotePath;
+                    } else {
+                        remotePath=client.cur_dir+"/"+remotePath;
+                    }
+                    if (localPath.charAt(0) == '/' ) {
+                        localPath = localPath.substring(1);
+                    }
+                    if (client.cur_dir=="/"){
+                        localPath= "/"+localPath;
+                    } else {
+                        localPath=client.cur_dir+"/"+localPath;
+                    }
                     if (client.downloadFile(remotePath, localPath)) {
                         System.out.println("Download successful.");
                     } else {
@@ -721,22 +808,42 @@ public class DistributedFileSystemClient {
                     }
                     break;
 
-                case "open":
-                    System.out.println("Enter file path:");
-                    String path = scanner.nextLine();
-                    DataInputStream fileStream = client.openFile(path);
-                    if (fileStream != null) {
-                        System.out.println("File opened.");
-                    } else {
-                        System.out.println("Failed to open file.");
-                    }
-                    break;
+//                case "open":
+//                    System.out.println("Enter file path:");
+//                    String path = scanner.nextLine();
+//                    DataInputStream fileStream = client.openFile(path);
+//                    if (fileStream != null) {
+//                        System.out.println("File opened.");
+//                    } else {
+//                        System.out.println("Failed to open file.");
+//                    }
+//                    break;
 
                 case "copy":
+
+
+                    System.out.println("Enter source file path:");
                     String copySourcePath = scanner.nextLine().trim();
+                    System.out.println("Enter destination file path:");
                     String copyDestPath = scanner.nextLine().trim();
-                    System.out.println("Enter source file path:"+copySourcePath);
-                    System.out.println("Enter destination file path:"+copyDestPath);
+                    if (copySourcePath.charAt(0) == '/' ) {
+                        copySourcePath = copySourcePath.substring(1);
+                    }
+                    if (client.cur_dir=="/"){
+                        copySourcePath= "/"+copySourcePath;
+                    } else {
+                        copySourcePath=client.cur_dir+"/"+copySourcePath;
+                    }
+
+                    if (copyDestPath.charAt(0) == '/' ) {
+                        copyDestPath = copyDestPath.substring(1);
+                    }
+                    if (client.cur_dir=="/"){
+                        copyDestPath= "/"+copyDestPath;
+                    } else {
+                        copyDestPath=client.cur_dir+"/"+copyDestPath;
+                    }
+
                     if (client.copyFile(copySourcePath, copyDestPath)) {
                         System.out.println("File copied successfully.");
                     } else {
@@ -747,6 +854,25 @@ public class DistributedFileSystemClient {
                 case "cd":
                     System.out.println("Enter path:");
                     String rel_path = scanner.nextLine().trim();
+
+                    if (rel_path.charAt(0) == '/' && rel_path.length()>1) {
+                        if (client.checkInfo(rel_path)){
+                            rel_path = rel_path.substring(1);
+                        }
+                        else {
+                            System.err.println("Invalid path.");
+                        }
+                        rel_path = rel_path.substring(1);
+                    } else if (rel_path.charAt(0) == '/' && rel_path.length()==1) {
+                        client.cur_dir = "/";
+                    }
+                    if (client.cur_dir=="/"){
+                        rel_path= "/"+rel_path;
+                    } else {
+                        rel_path=client.cur_dir+"/"+rel_path;
+                    }
+
+
                     if(!rel_path.startsWith("/")) {
                         //@todo 检查路径
                         client.cur_dir = client.cur_dir + File.separator + rel_path;
@@ -756,6 +882,15 @@ public class DistributedFileSystemClient {
                 case "info":
                     System.out.println("Enter file or directory path:");
                     String infoDirPath = scanner.nextLine().trim();
+                    if (infoDirPath.charAt(0) == '/' ) {
+                        infoDirPath = infoDirPath.substring(1);
+                    }
+                    if (client.cur_dir=="/"){
+                        infoDirPath= "/"+infoDirPath;
+                    } else {
+                        infoDirPath=client.cur_dir+"/"+infoDirPath;
+                    }
+
                     FileInfo info = client.getFileInfo(infoDirPath);
                     if (info != null) {
                         System.out.println("File/Directory Info: " + info);
@@ -768,6 +903,14 @@ public class DistributedFileSystemClient {
                     // 实现从文件读取数据的逻辑
                     System.out.println("Enter file path:");
                     String readPath = scanner.nextLine().trim();
+                    if (readPath.charAt(0) == '/' ) {
+                        readPath = readPath.substring(1);
+                    }
+                    if (client.cur_dir=="/"){
+                        readPath= "/"+readPath;
+                    } else {
+                        readPath=client.cur_dir+"/"+readPath;
+                    }
                     byte[] fileData = client.readFile(readPath, 0, 1024);
                     if (fileData != null) {
                         System.out.println("File content: " + new String(fileData));
@@ -780,6 +923,16 @@ public class DistributedFileSystemClient {
                     // 实现向文件写入数据的逻辑
                     System.out.println("Enter file path:");
                     String writePath = scanner.nextLine().trim();
+
+                    if (writePath.charAt(0) == '/' ) {
+                        writePath = writePath.substring(1);
+                    }
+                    if (client.cur_dir=="/"){
+                        writePath= "/"+writePath;
+                    } else {
+                        writePath=client.cur_dir+"/"+writePath;
+                    }
+
                     System.out.println("Enter file content:");
                     String fcontent = scanner.nextLine();
                     boolean writeSuccess = client.writeFile(writePath, fcontent.getBytes());
@@ -792,22 +945,38 @@ public class DistributedFileSystemClient {
 
                 case "cat":
                     System.out.println("Enter file path:");
-                    String f = scanner.nextLine();
+                    String f = scanner.nextLine().trim();
+                    if (f.charAt(0) == '/' ) {
+                        f = f.substring(1);
+                    }
+                    if (client.cur_dir=="/"){
+                        f= "/"+f;
+                    } else {
+                        f=client.cur_dir+"/"+f;
+                    }
                     byte[] content = client.readFile(f,0,0);
                     System.out.println(new String(content));
                     break;
 
-                case "close":
-                    // 实现关闭文件的逻辑
-                    System.out.println("Enter file path:");
-                    String closePath = scanner.nextLine().trim();
-                    boolean closeSuccess = client.closeFile(closePath);
-                    System.out.println("Close result: " + (closeSuccess ? "Success" : "Failed"));
-                    break;
+//                case "close":
+//                    // 实现关闭文件的逻辑
+//                    System.out.println("Enter file path:");
+//                    String closePath = scanner.nextLine().trim();
+//                    boolean closeSuccess = client.closeFile(closePath);
+//                    System.out.println("Close result: " + (closeSuccess ? "Success" : "Failed"));
+//                    break;
 
                 case "delete":
                     System.out.println("Enter file path:");
                     String deletePath = scanner.nextLine().trim();
+                    if (deletePath.charAt(0) == '/' ) {
+                        deletePath = deletePath.substring(1);
+                    }
+                    if (client.cur_dir=="/"){
+                        deletePath= "/"+deletePath;
+                    } else {
+                        deletePath=client.cur_dir+"/"+deletePath;
+                    }
                     boolean deleteSuccess = client.deleteFile(deletePath);
                     System.out.println("Delete result: " + (deleteSuccess ? "Success" : "Failed"));
                     break;
@@ -825,5 +994,7 @@ public class DistributedFileSystemClient {
         client.disconnect();
         scanner.close();
     }
+
+
 }
 

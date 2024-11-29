@@ -28,6 +28,15 @@ public class FileInfo implements Serializable { // 文件元数据结构
         this.creationTime = creationTime;
     }
 
+    public FileInfo(String fileName,String path, boolean isDirectory,long fileSize, String owner,long creationTime,String location) {
+        this.path = path;
+        this.owner = owner;
+        this.isDirectory = isDirectory;
+        this.fileName = fileName;
+        this.fileSize = fileSize;
+        this.creationTime = creationTime;
+    }
+
     public FileInfo(String path, String owner, boolean isDirectory, FileInfo parentInfo) {
         this.path = path;
         this.owner = owner;
@@ -59,7 +68,8 @@ public class FileInfo implements Serializable { // 文件元数据结构
                 .append(fileSize).append(",")
                 .append(path).append(",")
                 .append(owner).append(",")
-                .append(isDirectory);
+                .append(isDirectory).append(",")
+                .append(creationTime);
 
         // 添加存储位置
         serialized.append(",").append(String.join(";", locations));
@@ -73,19 +83,20 @@ public class FileInfo implements Serializable { // 文件元数据结构
      * @return 反序列化后的 FileInfo 对象
      */
     public static FileInfo deserialize(String serialized) {
-        String[] parts = serialized.split(",", 6); // 使用 6 分隔，避免路径或其他字段被误分隔
+        String[] parts = serialized.split(",", 7); // 使用 7 分隔，避免路径或其他字段被误分隔
         String fileName = parts[0];
         long fileSize = Long.parseLong(parts[1]);
         String path = parts[2];
         String owner = parts[3];
         boolean isDirectory = Boolean.parseBoolean(parts[4]);
         long creationTime = Long.parseLong(parts[5]);
+        String locations = parts[6];
 
         // 构造对象
-        FileInfo fileInfo = new FileInfo(fileName, path, isDirectory, fileSize, owner, creationTime);
+        FileInfo fileInfo = new FileInfo(fileName, path, isDirectory, fileSize, owner, creationTime,locations);
         // 添加存储位置
-        if (parts.length > 5 && !parts[5].isEmpty()) {
-            String[] locationArray = parts[5].split(";");
+        if (parts.length > 6 && !parts[6].isEmpty()) {
+            String[] locationArray = parts[6].split(";");
             for (String location : locationArray) {
                 fileInfo.getLocations().add(location);
             }

@@ -49,7 +49,6 @@ public class MetaServerClient {
             MetaOpCode.LIST_FILE.write(connection.getOut());
             connection.writeUTF(path);
             connection.flush();
-
             // 接收 MetadataServer 返回的文件列表
             int size = connection.readInt();
             for (int i = 0; i < size; i++) {
@@ -80,27 +79,63 @@ public class MetaServerClient {
     }
 
     public Integer createFile(String path) throws IOException {
+        try {
         DataOutputStream out = connection.getOut();
         DataInputStream in = connection.getIn();
+            ArrayList<String> pathlist = new ArrayList<>();
+            StringBuilder currentPath = new StringBuilder();
 
-        try {
-            // 发送 CREATE_FILE 操作码
-            MetaOpCode.CREATE_FILE.write(out);
-            out.writeUTF(path);       // 文件路径
-            out.writeUTF(Config.USER); // 用户
-            out.writeBoolean(false);  // 标记为文件
-            out.flush();
-
-            // 接收响应
-            int retCode = in.readInt();
-            String msg = in.readUTF();
-            if (retCode == 0) {
-                System.out.println("Metadata server success: " + msg);
-                return retCode; // 返回存储节点信息
-            } else {
-                System.err.println("Metadata server error: " + msg);
-                return retCode;
+            // 按 "/" 拆分路径
+            String[] parts = path.split("/");
+            for (String part : parts) {
+                if (!part.isEmpty()) { // 忽略空部分
+                    currentPath.append("/").append(part);
+                    pathlist.add(currentPath.toString());
+                }
             }
+
+            // 如果路径为 "/", 保证至少包含根路径
+            if (pathlist.isEmpty() && path.equals("/")) {
+                pathlist.add("/");
+            }
+            System.out.println("123465498798321"+pathlist.get(0));
+        for (int i=0 ; i<pathlist.size() ; i++){
+                // 发送 CREATE_FILE 操作码
+            String specificPath = pathlist.get(i);
+            if (i!=pathlist.size()-1) {
+                MetaOpCode.CREATE_FILE.write(out);
+                out.writeUTF(specificPath);       // 文件路径
+                out.writeUTF(Config.USER); // 用户
+                out.writeBoolean(false);  // 标记为文件
+                out.flush();
+            } else {
+                MetaOpCode.CREATE_FILE.write(out);
+                out.writeUTF(specificPath);       // 文件路径
+                out.writeUTF(Config.USER); // 用户
+                out.writeBoolean(true);  // 标记为文件
+                out.flush();
+            }
+
+                // 接收响应
+                int retCode = in.readInt();
+                String msg = in.readUTF();
+                if (i==pathlist.size()-1) {
+                    if (retCode == 0) {
+                        System.out.println("Metadata server success: " + msg);
+                        return retCode; // 返回存储节点信息
+                    } else {
+                        System.err.println("Metadata server error: " + msg);
+                        return retCode;
+                    }
+                } else {
+                    if (retCode == 0) {
+                        System.out.println("Metadata server success: " + msg);
+                    } else {
+                        System.err.println("Metadata server error: " + msg);
+                    }
+                }
+            }
+        return 0;
         } catch (IOException e) {
             System.err.println("Error communicating with metadata server: " + e.getMessage());
             throw e;
@@ -187,26 +222,54 @@ public class MetaServerClient {
             DataOutputStream out = connection.getOut();
             DataInputStream in = connection.getIn();
 
+            ArrayList<String> pathlist = new ArrayList<>();
+            StringBuilder currentPath = new StringBuilder();
 
-            // 发送 CREATE_FILE 操作码
-            MetaOpCode.CREATE_FILE.write(out);
-            out.flush();
-            out.writeUTF(path);       // 目录路径
-            out.writeUTF(Config.USER); // 用户
-            out.writeBoolean(true);   // 标记为目录
-            out.flush();
-
-            // 读取响应
-            int retCode = in.readInt();
-            String msg = in.readUTF();
-
-            if (retCode == 0) {
-                System.out.println("Directory created successfully: " + path);
-                return true;
-            } else {
-                System.err.println("Failed to create directory: " + msg);
-                return false;
+            // 按 "/" 拆分路径
+            String[] parts = path.split("/");
+            for (String part : parts) {
+                if (!part.isEmpty()) { // 忽略空部分
+                    currentPath.append("/").append(part);
+                    pathlist.add(currentPath.toString());
+                }
             }
+
+            // 如果路径为 "/", 保证至少包含根路径
+            if (pathlist.isEmpty() && path.equals("/")) {
+                pathlist.add("/");
+            }
+            System.out.println("123465498798321"+pathlist.get(0));
+            for(int i=0;i<pathlist.size();i++){
+                // 发送 CREATE_FILE 操作码
+                String specificPath = pathlist.get(i);
+                MetaOpCode.CREATE_FILE.write(out);
+                out.flush();
+                out.writeUTF(specificPath);       // 目录路径
+                out.writeUTF(Config.USER); // 用户
+                out.writeBoolean(true);   // 标记为目录
+                out.flush();
+
+                // 读取响应
+                int retCode = in.readInt();
+                String msg = in.readUTF();
+
+                if (i!=pathlist.size()-1) {
+                    if (retCode == 0) {
+                        System.out.println("Directory created successfully: " + path);
+                    } else {
+                        System.err.println("Failed to create directory: " + msg);
+                    }
+                } else {
+                    if (retCode == 0) {
+                        System.out.println("Directory created successfully: " + path);
+                        return true;
+                    } else {
+                        System.err.println("Failed to create directory: " + msg);
+                        return false;
+                    }
+                }
+            }
+            return true;
         } catch (IOException e) {
             System.err.println("Failed to create directory(IOException): " + path);
             e.printStackTrace();
@@ -273,12 +336,12 @@ public class MetaServerClient {
 
         // 读取响应
         int retCode = in.readInt();
+        String serializedFileInfo = in.readUTF();// 接收序列化的 FileInfo 对象
         if (retCode == 0) {
-            String serializedFileInfo = in.readUTF(); // 接收序列化的 FileInfo 对象
             return FileInfo.deserialize(serializedFileInfo); // 反序列化为 FileInfo 对象
         } else {
-            String errorMsg = in.readUTF();
-            System.err.println("Failed to get file info: " + errorMsg);
+//            String errorMsg = in.readUTF();
+            System.err.println("Failed to get file info ");
             return null;
         }
     }

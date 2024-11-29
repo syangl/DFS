@@ -428,8 +428,8 @@ public class MetadataServer {
             if(size > 0) {
                 for (String name : fileList) {
                     out.writeUTF(name);
+                    out.flush();
                 }
-                out.flush();
             }
             System.out.print("end of listfile.");
         } catch (IOException e) {
@@ -690,7 +690,6 @@ public class MetadataServer {
             if (fileInfo == null) {
                 throw new IllegalArgumentException("File or directory not found: " + path);
             }
-
             out.writeInt(0); // 成功状态码
             out.writeUTF(fileInfo.serialize()); // 返回序列化的 FileInfo 对象
         } catch (IllegalArgumentException e) {

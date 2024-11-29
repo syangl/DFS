@@ -30,10 +30,9 @@ public class DataServer {
     HeartBeatThread heartBeat;
     private ExecutorService threadPool;
 
+
     public DataServer() {
         try {
-
-
             this.nodeName = InetAddress.getLocalHost().getHostName();
             serverSocket = new ServerSocket(DATA_SERVRE_PORT);
             threadPool = Executors.newFixedThreadPool(100);
@@ -421,7 +420,7 @@ public class DataServer {
             }
             out.writeInt(-1); // 结束标志
         } catch (Exception e) {
-            out.writeInt(-1);
+            out.writeInt(-2);
             out.writeUTF("Error reading file: " + e.getMessage());
         }
     }
