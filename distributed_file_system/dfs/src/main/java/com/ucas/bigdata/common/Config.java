@@ -12,4 +12,5 @@ public class Config {
     public static final String[] STORAGE_NODES = {"dfs101", "dfs102", "dfs103"};
     public static String USER = "dfs";
     public static String GROUP = "dfsg";
+    public static int DUPLICATE_NUM = 3;
 }

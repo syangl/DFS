@@ -237,7 +237,6 @@ public class MetaServerClient {
             if (pathlist.isEmpty() && path.equals("/")) {
                 pathlist.add("/");
             }
-            System.out.println("123465498798321"+pathlist.get(0));
             for(int i=0;i<pathlist.size();i++){
                 // 发送 CREATE_FILE 操作码
                 String specificPath = pathlist.get(i);

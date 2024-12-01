@@ -4,12 +4,13 @@ import com.ucas.bigdata.client.Connection;
 import com.ucas.bigdata.common.Config;
 import com.ucas.bigdata.common.FileInfo;
 import com.ucas.bigdata.common.MetaOpCode;
-import org.apache.log4j.LogManager;
-import org.apache.log4j.Logger;
+//import org.apache.log4j.LogManager;
+//import org.apache.log4j.Logger;
 import org.rocksdb.Options;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.RocksIterator;
+import com.ucas.bigdata.common.LogManager;
 
 import java.io.*;
 import java.net.ServerSocket;
@@ -21,7 +22,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MetadataServer {
-    private static Logger log = LogManager.getLogger(MetadataServer.class);
+//    private static Logger log = LogManager.getLogger(MetadataServer.class);
+    private LogManager logManager = new LogManager();
     private ServerSocket serverSocket;
     private Map<String, String> fileToStorageNode; // 文件路径到存储节点名称的映射
     private LinkedHashMap<String,StorageNode> storageNodes = new LinkedHashMap();
@@ -56,7 +58,10 @@ public class MetadataServer {
             loadMetadata();
 
         } catch (IOException e) {
-            log.info(e);} catch (RocksDBException e) {
+            String log = e.toString();
+            long timestamp = System.currentTimeMillis();
+            logManager.log(String.valueOf(timestamp), log);  // 记录操作到日志中
+        } catch (RocksDBException e) {
             throw new RuntimeException(e);
         }
     }
@@ -69,7 +74,9 @@ public class MetadataServer {
                 fileSystem.put(path, fileInfo);
             }
         } catch (Exception e) {
-            log.error("Error loading metadata from RocksDB: ", e);
+            String log = e.toString();
+            long timestamp = System.currentTimeMillis();
+            logManager.log(String.valueOf(timestamp), log);  // 记录操作到日志中
         }
     }
 
@@ -126,9 +133,9 @@ public class MetadataServer {
                 DataOutputStream out = new DataOutputStream(clientSocket.getOutputStream());
                 // 处理客户端请求
                 while (true){
-                    System.out.println("Before read");
+//                    System.out.println("Before read");
                     MetaOpCode op = MetaOpCode.read(in);
-                    System.out.println("After read OpCode: " + op);
+//                    System.out.println("After read OpCode: " + op);
                     process(op, in, out);
                 }
             }
@@ -219,8 +226,8 @@ public class MetadataServer {
 
             // 可添加资源释放逻辑，例如将文件标记为关闭
             // 在此示例中仅记录关闭操作
-            log.info("File " + path + " closed successfully.");
-
+//            log.info("File " + path + " closed successfully.");
+            logManager.log(String.valueOf(System.currentTimeMillis()), "File " + path + " closed successfully.");
             out.writeInt(0); // 成功状态码
             out.writeUTF("File closed successfully.");
         } catch (IllegalArgumentException e) {
@@ -237,7 +244,10 @@ public class MetadataServer {
             String path = in.readUTF(); // 读取客户端发送路径
             String owner = in.readUTF(); // 读取客户端发送用户
             boolean isDir = in.readBoolean(); // 是否为目录
-            log.info(new Date().toString()+" before createFile." );
+//            log.info(new Date().toString()+" before createFile." );
+            String log = new Date().toString()+" before createFile.";
+            long timestamp = System.currentTimeMillis();
+            logManager.log(String.valueOf(timestamp), log);  // 记录操作到日志中
             FileInfo fi = create(path,owner,isDir);
             if (fi == null) {
                 out.writeInt(-1);
@@ -245,18 +255,26 @@ public class MetadataServer {
                 out.flush();
                 return;
             }else {
-                log.info(new Date().toString()+" after createFile." );
-                String nodeName = getNewStorageNode(0); // 分配存储节点
-                String localFileId = UUID.randomUUID().toString(); // 生成唯一文件块 ID
-                fi.getLocations().add(nodeName + ":" + localFileId); // 记录存储位置
+//                log.info(new Date().toString()+" after createFile." );
+//                String log = new Date().toString()+" after createFile."
+                logManager.log(String.valueOf(System.currentTimeMillis()), new Date().toString()+" after createFile." );  // 记录操作到日志中
+
+                for (int i = 0; i < Config.DUPLICATE_NUM; i++) {
+                    String nodeName = getNewStorageNode(0); // 分配存储节点
+                    String localFileId = UUID.randomUUID().toString(); // 生成唯一文件块 ID
+                    fi.getLocations().add(nodeName + ":" + localFileId); // 记录存储位置
+                }
+
                 // 持久化到 RocksDB
                 db.put(path.getBytes(), serializeFileInfo(fi));
                 // 返回code
                 out.writeInt(0);
                 out.writeUTF(isDir ? "Directory created successfully: " + path : "File created successfully: " + path);
                 out.flush();
-                log.info(new Date().toString()+" createFile 1." );
+//                log.info(new Date().toString()+" createFile 1." );
+                logManager.log(String.valueOf(System.currentTimeMillis()), new Date().toString()+" createFile 1." );
             }
+            logManager.log(String.valueOf(System.currentTimeMillis()), "CREATE " + path + " " + owner);  // 记录操作到日志中
         } catch (IOException e) {
             e.printStackTrace();
             try {
@@ -317,7 +335,8 @@ public class MetadataServer {
                 // 文件或目录不存在
                 out.writeInt(-1); // 错误响应
                 out.writeUTF("File/Directory " + path + " not found.");
-                log.info("File/Directory " + path + " not found.");
+//                log.info("File/Directory " + path + " not found.");
+                logManager.log(String.valueOf(System.currentTimeMillis()), "File/Directory " + path + " not found.");
                 return;
             }
             FileInfo fileInfo = fileSystem.get(path);
@@ -327,7 +346,8 @@ public class MetadataServer {
                 // 权限不足
                 out.writeInt(-1); // 错误响应
                 out.writeUTF("Permission denied. You are not the owner of " + path);
-                log.info("Permission denied. You are not the owner of " + path);
+//                log.info("Permission denied. You are not the owner of " + path);
+                logManager.log(String.valueOf(System.currentTimeMillis()), "Permission denied. You are not the owner of " + path);
                 return;
             }
             // 如果是目录，递归删除子文件和子目录
@@ -339,14 +359,17 @@ public class MetadataServer {
             db.delete(path.getBytes()); // 删除持久化记录
             out.writeInt(0); // 成功响应
             out.writeUTF("File/Directory " + path + " deleted successfully.");
-            log.info((fileInfo.isDirectory() ? "Directory" : "File") + " " + path + " deleted by " + requester);
+//            log.info((fileInfo.isDirectory() ? "Directory" : "File") + " " + path + " deleted by " + requester);
+            logManager.log(String.valueOf(System.currentTimeMillis()), (fileInfo.isDirectory() ? "Directory" : "File") + " " + path + " deleted by " + requester);
         } catch (IOException | RocksDBException e) {
             try {
                 out.writeInt(-1); // 错误响应
                 out.writeUTF("Error deleting file/directory: " + e.getMessage());
-                log.error("Error deleting file/directory " + path + ": ", e);
+//                log.error("Error deleting file/directory " + path + ": ", e);
+                logManager.log(String.valueOf(System.currentTimeMillis()), "Error deleting file/directory " + path + ": " + e.getMessage());
             } catch (IOException ex) {
-                log.error("Error sending delete response: ", ex);
+//                log.error("Error sending delete response: ", ex);
+                logManager.log(String.valueOf(System.currentTimeMillis()), "Error sending delete response: " + ex.toString());
             }
         }
     }
@@ -362,9 +385,11 @@ public class MetadataServer {
                 try {
                     db.delete(child.getPath().getBytes()); // 删除持久化记录
                 } catch (RocksDBException e) {
-                    log.error("Error deleting persistent metadata for " + child.getPath(), e);
+//                    log.error("Error deleting persistent metadata for " + child.getPath(), e);
+                    logManager.log(String.valueOf(System.currentTimeMillis()), "Error deleting persistent metadata for " + child.getPath() + ": " + e.getMessage());
                 }
-                log.info((child.isDirectory() ? "Directory" : "File") + " " + child.getPath() + " deleted.");
+//                log.info((child.isDirectory() ? "Directory" : "File") + " " + child.getPath() + " deleted.");
+                logManager.log(String.valueOf(System.currentTimeMillis()), (child.isDirectory() ? "Directory" : "File") + " " + child.getPath() + " deleted.");
             }
         }
     }
@@ -491,7 +516,8 @@ public class MetadataServer {
             out.writeInt(0);
             out.writeUTF(msg);
         }catch (IOException e) {
-            log.error(e.getMessage());
+//            log.error(System.currentTimeMillis());
+            logManager.log(String.valueOf(System.currentTimeMillis()), e.getMessage());
         }
     }
 
@@ -774,7 +800,8 @@ public class MetadataServer {
 
             // 创建目标文件元数据
             FileInfo destFileInfoNew = create(destPath, sourceFileInfo.getOwner(), false);
-            log.info(new Date().toString()+" after createFile." );
+//            log.info(new Date().toString()+" after createFile." );
+            logManager.log(String.valueOf(System.currentTimeMillis()), new Date().toString()+" after createFile." );
             for (String location : sourceFileInfo.getLocations()) {
                 String nodeName = getNewStorageNode(0); // 分配存储节点
                 String localFileId = UUID.randomUUID().toString(); // 生成唯一文件块 ID

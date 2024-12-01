@@ -298,7 +298,17 @@ public class DataServer {
                     out.write(buffer,0,bytesRead);
                     out.flush();
                     bytesRead = file.read(buffer);
-                }while (bytesRead >0);
+                }while (bytesRead > 0);
+                out.writeInt(END_STREAM);
+            } else if (bytesRead == -1) {
+                retCode = 0;
+                out.writeInt(retCode);
+                out.writeUTF("OK");
+                out.flush();
+
+                out.writeInt(0);
+                out.write(buffer,0,0);
+                out.flush();
                 out.writeInt(END_STREAM);
             }
 
