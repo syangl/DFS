@@ -71,8 +71,9 @@ public class DistributedFileSystemClient {
             for (String location : locations) {
                 // 解析存储节点信息
                 String[] nodeInfo = location.split(":");
-//            String nodeHost = nodeInfo[0];  TODO
-                String nodeHost = "localhost";
+            String nodeHost = nodeInfo[0];
+//            TODO
+//                String nodeHost = "localhost";
                 String fileId = nodeInfo[1];
 
                 // 3. 连接数据服务器并初始化文件
@@ -106,7 +107,7 @@ public class DistributedFileSystemClient {
                 if (retCode != 0) {
                     String nodeHost = location.split(":")[0];
                     // TODO
-                    nodeHost = "localhost";
+//                    nodeHost = "localhost";
                     System.err.println("Failed to create file on data server: " + nodeHost);
                     System.err.println("Try to recover: " + nodeHost);
                     if(!deleteFile(path)) {
@@ -133,8 +134,9 @@ public class DistributedFileSystemClient {
 
             // 2. 从存储位置中解析第一个 DataServer
             String[] nodeInfo = locations.get(0).split(":");
-//            String nodeHost = nodeInfo[0]; TODO
-            String nodeHost = "localhost";
+            String nodeHost = nodeInfo[0];
+//            TODO
+//            String nodeHost = "localhost";
             String fileId = nodeInfo[1];
 
             // 3. 与 DataServer 建立连接
@@ -179,8 +181,9 @@ public class DistributedFileSystemClient {
             for (String location : locations) {
                 // 2. 连接到数据服务器
                 String[] nodeInfo = location.split(":");
-//            String nodeHost = nodeInfo[0];  TODO
-                String nodeHost = "localhost";
+            String nodeHost = nodeInfo[0];
+//            TODO
+//                String nodeHost = "localhost";
                 String fileId = nodeInfo[1];
                 int nodePort = Config.DATA_SERVRE_PORT;
 
@@ -238,9 +241,10 @@ public class DistributedFileSystemClient {
 
             for (String location : locations) {
                 String[] nodeInfo = location.split(":");
-//            String nodeHost = nodeInfo[0];  TODO
+            String nodeHost = nodeInfo[0];
+//            TODO
                 String fileId = nodeInfo[1];
-                String nodeHost = "localhost";
+//                String nodeHost = "localhost";
 
                 boolean setResult = metaDataClient.setFileSize(path, data.length);
                 if (!setResult) {
@@ -348,8 +352,9 @@ public class DistributedFileSystemClient {
             for (String location : locations) {
                 // 2. 从存储位置中解析第一个 DataServer
                 String[] nodeInfo = location.split(":");
-//            String nodeHost = nodeInfo[0];  TODO
-                String nodeHost = "localhost";
+            String nodeHost = nodeInfo[0];
+//            TODO
+//                String nodeHost = "localhost";
                 String fileId = nodeInfo[1];
 
                 // 与 DataServer 建立连接
@@ -413,8 +418,9 @@ public class DistributedFileSystemClient {
             // 通知数据服务器删除文件数据
             for (String location : locations) {
                 String[] nodeInfo = location.split(":");
-//                String nodeHost = nodeInfo[0];  TODO
-                String nodeHost = "localhost";
+                String nodeHost = nodeInfo[0];
+//                TODO
+//                String nodeHost = "localhost";
                 String fileId = nodeInfo[1];
 
                 try (Connection connection = new Connection(nodeHost, Config.DATA_SERVRE_PORT)) {
@@ -467,32 +473,6 @@ public class DistributedFileSystemClient {
             return false;
         }
 
-        for (String location : locations) {
-            String[] nodeInfo = location.split(":");
-//                String nodeHost = nodeInfo[0]; TODO
-            String nodeHost = "localhost";
-//            try (Connection connection = new Connection(nodeHost, Config.DATA_SERVRE_PORT)) {
-//                DataOutputStream out = connection.getOut();
-//                DataInputStream in = connection.getIn();
-//
-//                DataOpCode.DELETE_DIRECTORY.write(out); // 发送删除目录操作码
-//                out.writeUTF(path); // 发送目录路径
-//                out.flush();
-//
-//                int retCode = in.readInt();
-//                String msg = in.readUTF();
-//
-//                connection.close();
-//                if (retCode != 0) {
-//                    System.err.println("Failed to delete directory on node " + nodeHost + ": " + msg);
-//                } else {
-//                    System.out.println("Directory deleted successfully on node " + nodeHost + ": " + msg);
-//                }
-//            } catch (IOException e) {
-//                System.err.println("Failed to connect to data server: " + nodeHost);
-//                e.printStackTrace();
-//            }
-        }
         return true;
     }
 
@@ -517,8 +497,9 @@ public class DistributedFileSystemClient {
             if (!oldLocations.isEmpty()) {
                 for (String oldLocation : oldLocations){
                     String[] destNodeInfo = oldLocation.split(":");
-//            String  oldNodeHost =  oldNodeInfo[0];  TODO
-                    String  oldNodeHost = "localhost";
+            String  oldNodeHost =  destNodeInfo[0];
+//            TODO
+//                    String  oldNodeHost = "localhost";
                     String  oldFileId = destNodeInfo[1];
 
                     try (Connection connection = new Connection(oldNodeHost, Config.DATA_SERVRE_PORT)) {
@@ -554,8 +535,9 @@ public class DistributedFileSystemClient {
             }
             for (String destLocation : destLocations) {
                 String[] destNodeInfo = destLocation.split(":");
-//            String destNodeHost = destNodeInfo[0];  TODO
-                String destNodeHost = "localhost";
+            String destNodeHost = destNodeInfo[0];
+//            TODO
+//                String destNodeHost = "localhost";
                 String destFileId = destNodeInfo[1];
 
                 // 与 DataServer 建立连接
@@ -610,8 +592,9 @@ public class DistributedFileSystemClient {
             if (!destLocations.isEmpty()) {  // 目标文件存在
                 for (String destLocation : destLocations) {
                     String[] destNodeInfo = destLocation.split(":");
-//                String destNodeHost = destNodeInfo[0];  TODO
-                    String destNodeHost = "localhost";
+                String destNodeHost = destNodeInfo[0];
+//                TODO
+//                    String destNodeHost = "localhost";
                     String destFileId = destNodeInfo[1];
                     // 连接到数据服务器
                     try (Connection connection = new Connection(destNodeHost, Config.DATA_SERVRE_PORT)) {

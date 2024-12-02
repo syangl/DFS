@@ -170,9 +170,6 @@ public class MetadataServer {
             case CREATE_FILE:
                 createFile(in, out);
                 break;
-//            case RENAME_FILE:
-//                //@todo
-//                break;
             case DEL_FILE:
                 delete(in, "dfs", out);  // 默认用户 "dfs"
                 break;
@@ -494,8 +491,8 @@ public class MetadataServer {
     private void handleHeartBeat(DataInputStream in, DataOutputStream out) {
         try {
             String nodeName = in.readUTF(); // 读取数据服务器发送的注册信息
-            //TODO 更新时间戳
-//            System.out.println(new Date().toString()+" received heartBeat from DataServer: " + nodeName);
+            //TODO
+            System.out.println(new Date().toString()+" received heartBeat from DataServer: " + nodeName);
             String msg = nodeName;
             Long now = System.currentTimeMillis();
             if(this.storageNodes.containsKey(nodeName)){//更新时间

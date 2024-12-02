@@ -48,7 +48,8 @@ public class DataServer {
     private void serve() throws IOException {
         System.out.println("Data Server is running...");
         isRunning = true;
-//        heartBeat.start(); TODO
+        heartBeat.start();
+//        TODO
         while (isRunning) {
             // 接受客户端连接
             Socket clientSocket = serverSocket.accept();
@@ -97,7 +98,7 @@ public class DataServer {
                 try {
                     Thread.sleep(Config.HEARTBEAT_SECS * 1000);
                     //TODO
-//                    System.out.println("heartBeat node " + nodeName + " time:"+new Date().toString());
+                    System.out.println("heartBeat node " + nodeName + " time:"+new Date().toString());
                 } catch (InterruptedException e) {
                 }
             }
