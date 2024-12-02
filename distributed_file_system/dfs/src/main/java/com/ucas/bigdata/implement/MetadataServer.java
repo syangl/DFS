@@ -257,7 +257,7 @@ public class MetadataServer {
                 logManager.log(String.valueOf(System.currentTimeMillis()), new Date().toString()+" after createFile." );  // 记录操作到日志中
 
                 for (int i = 0; i < Config.DUPLICATE_NUM; i++) {
-                    String nodeName = getNewStorageNode(0); // 分配存储节点
+                    String nodeName = (String)storageNodes.keySet().toArray()[i]; // 分配存储节点
                     String localFileId = UUID.randomUUID().toString(); // 生成唯一文件块 ID
                     fi.getLocations().add(nodeName + ":" + localFileId); // 记录存储位置
                 }
