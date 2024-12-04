@@ -497,9 +497,9 @@ public class DistributedFileSystemClient {
             if (!oldLocations.isEmpty()) {
                 for (String oldLocation : oldLocations){
                     String[] destNodeInfo = oldLocation.split(":");
-            String  oldNodeHost =  destNodeInfo[0];
-//            TODO
-//                    String  oldNodeHost = "localhost";
+                    String  oldNodeHost =  destNodeInfo[0];
+                    //            TODO
+                    //                    String  oldNodeHost = "localhost";
                     String  oldFileId = destNodeInfo[1];
 
                     try (Connection connection = new Connection(oldNodeHost, Config.DATA_SERVRE_PORT)) {
@@ -512,6 +512,7 @@ public class DistributedFileSystemClient {
 
                         int retCode = in.readInt();
                         String msg = in.readUTF();
+                        connection.close();
                         if (retCode != 0) {
                             System.err.println("Serious Storage Node Error!");
                             System.exit(-1);
@@ -546,8 +547,17 @@ public class DistributedFileSystemClient {
                     System.err.println("No storage nodes available for file: " + sourcePath);
                     return false;
                 }
-                // 选择一个源文件存储节点
-                int selectedSourceIndex = Math.abs(sourcePath.hashCode()) % sourceLocations.size();
+                // 选择一个源文件存储节点，和destNodeHost一致
+                int selectedSourceIndex = -1;
+                for (int i = 0; i < sourceLocations.size(); i++) {
+                    String sourceLocation = sourceLocations.get(i);
+                    String[] sourceNodeInfo = sourceLocation.split(":");
+                    String sourceNodeHost = sourceNodeInfo[0];
+                    if (sourceNodeHost.equals(destNodeHost)) {
+                        selectedSourceIndex = i;
+                        break;
+                    }
+                }
                 String sourceLocation = sourceLocations.get(selectedSourceIndex);
                 String[] sourceNodeInfo = sourceLocation.split(":");
                 String sourceNodeHost = sourceNodeInfo[0];
@@ -566,6 +576,7 @@ public class DistributedFileSystemClient {
                     // 检查 DataServer 的响应
                     int retCode = in.readInt();
                     String msg = in.readUTF();
+                    connection.close();
                     if (retCode == 0) {
                         System.out.println("File copied successfully: " + sourcePath + " -> " + destPath);
 //                            return true;
@@ -592,7 +603,7 @@ public class DistributedFileSystemClient {
             if (!destLocations.isEmpty()) {  // 目标文件存在
                 for (String destLocation : destLocations) {
                     String[] destNodeInfo = destLocation.split(":");
-                String destNodeHost = destNodeInfo[0];
+                    String destNodeHost = destNodeInfo[0];
 //                TODO
 //                    String destNodeHost = "localhost";
                     String destFileId = destNodeInfo[1];
@@ -609,6 +620,7 @@ public class DistributedFileSystemClient {
                         // 接收数据服务器的响应
                         int retCode = in.readInt();
                         String msg = in.readUTF();
+                        connection.close();
                         if (retCode == 0) {
                             System.out.println("File delete successfully on data server: " + sourcePath + " to " + destPath);
                         } else {

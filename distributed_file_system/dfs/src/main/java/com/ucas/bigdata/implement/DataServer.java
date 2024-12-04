@@ -38,7 +38,7 @@ public class DataServer {
             threadPool = Executors.newFixedThreadPool(100);
             metaClient = new MetaServerClient();
             heartBeat = new HeartBeatThread();
-            storage_path = "/homework_storage";
+            storage_path = "/opt/module/hw-dfs/homework_storage";
         } catch (IOException e) {
             e.printStackTrace();
         }

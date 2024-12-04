@@ -425,12 +425,12 @@ public class MetadataServer {
         return fileToStorageNode.get(filePath);
     }
 
-    public String getNewStorageNode(long fileSize) {
-        Random random = new Random();
-        int id = Math.abs(random.nextInt()) % storageNodes.size();
-        String sn = (String)storageNodes.keySet().toArray()[id];
-        return sn;
-    }
+//    public String getNewStorageNode(long fileSize) {
+//        Random random = new Random();
+//        int id = Math.abs(random.nextInt()) % storageNodes.size();
+//        String sn = (String)storageNodes.keySet().toArray()[id];
+//        return sn;
+//    }
 
     public void setStorageNode(List<StorageNode> storageNodes) {
         for(StorageNode sn : storageNodes)
@@ -457,9 +457,11 @@ public class MetadataServer {
             List<String> fileList = new ArrayList<String>();
             List<String> fileList1 = new ArrayList<String>();
             String cur_dir = in.readUTF();
+            System.out.print("debug 1" + cur_dir);
             for (FileInfo fileInfo : fileSystem.values()) {
                 fileList.add(fileInfo.getPath()); // 获取 path 并加入到列表中
             }
+            System.out.print("debug 2: "+fileSystem.values());
             if (!cur_dir.endsWith("/") && !cur_dir.equals("/")) {
                 cur_dir = cur_dir + "/";
             }
@@ -474,6 +476,7 @@ public class MetadataServer {
             }
 
             int size = fileList1.size();
+            System.out.print("debug3 size: "+size);
             out.writeInt(size);
             if(size > 0) {
                 for (String name : fileList1) {
@@ -483,6 +486,7 @@ public class MetadataServer {
             }
             System.out.print("end of listfile.");
         } catch (IOException e) {
+            System.out.println("Error sending list file response: " + e.toString());
             e.printStackTrace();
         }
 
@@ -518,30 +522,30 @@ public class MetadataServer {
         }
     }
 
-    private void handleCreateFile(DataInputStream in, DataOutputStream out) throws IOException {
-        String path = in.readUTF();
-        String owner = in.readUTF();
-        boolean isDir = in.readBoolean(); // 区分文件和目录
-
-        if (isDir) {
-            handleCreateDirectory(path, owner, out); // 调用新增的 createDirectory 逻辑
-        } else {
-            // 调用现有的 createFile 方法逻辑
-            try {
-                FileInfo fi = create(path, owner, false);
-                String nodeName = getNewStorageNode(0);
-                String localFileId = UUID.randomUUID().toString();
-                fi.getLocations().add(nodeName + ":" + localFileId);
-                db.put(path.getBytes(), serializeFileInfo(fi));
-
-                out.writeInt(0);
-                out.writeUTF(nodeName + ":" + localFileId);
-            } catch (Exception e) {
-                out.writeInt(-1);
-                out.writeUTF(e.getMessage());
-            }
-        }
-    }
+//    private void handleCreateFile(DataInputStream in, DataOutputStream out) throws IOException {
+//        String path = in.readUTF();
+//        String owner = in.readUTF();
+//        boolean isDir = in.readBoolean(); // 区分文件和目录
+//
+//        if (isDir) {
+//            handleCreateDirectory(path, owner, out); // 调用新增的 createDirectory 逻辑
+//        } else {
+//            // 调用现有的 createFile 方法逻辑
+//            try {
+//                FileInfo fi = create(path, owner, false);
+//                String nodeName = getNewStorageNode(0);
+//                String localFileId = UUID.randomUUID().toString();
+//                fi.getLocations().add(nodeName + ":" + localFileId);
+//                db.put(path.getBytes(), serializeFileInfo(fi));
+//
+//                out.writeInt(0);
+//                out.writeUTF(nodeName + ":" + localFileId);
+//            } catch (Exception e) {
+//                out.writeInt(-1);
+//                out.writeUTF(e.getMessage());
+//            }
+//        }
+//    }
 
     /**
      * 处理目录创建请求
@@ -800,7 +804,7 @@ public class MetadataServer {
 //            log.info(new Date().toString()+" after createFile." );
             logManager.log(String.valueOf(System.currentTimeMillis()), new Date().toString()+" after createFile." );
             for (String location : sourceFileInfo.getLocations()) {
-                String nodeName = getNewStorageNode(0); // 分配存储节点
+                String nodeName = location.split(":")[0]; // copy的hostname和source保持一致
                 String localFileId = UUID.randomUUID().toString(); // 生成唯一文件块 ID
                 destFileInfoNew.getLocations().add(nodeName + ":" + localFileId); // 记录存储位置
             }
@@ -897,7 +901,6 @@ public class MetadataServer {
         metaServer.serve();
 
     }
-
 
 }
 

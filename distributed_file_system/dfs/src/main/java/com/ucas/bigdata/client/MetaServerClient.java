@@ -47,6 +47,7 @@ public class MetaServerClient {
         List<String> fileList = new ArrayList<>();
         try {
             MetaOpCode.LIST_FILE.write(connection.getOut());
+            connection.flush();
             connection.writeUTF(path);
             connection.flush();
             // 接收 MetadataServer 返回的文件列表
@@ -196,7 +197,7 @@ public class MetaServerClient {
             // 发送 DEL_FILE 操作码
             MetaOpCode.DEL_FILE.write(out);
             out.writeUTF(path); // 发送文件路径
-            out.writeBoolean(false); // 标记为文件删除
+//            out.writeBoolean(false); // 标记为文件删除
             out.flush();
 
             // 接收响应

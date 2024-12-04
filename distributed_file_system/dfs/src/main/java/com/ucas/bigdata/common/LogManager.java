@@ -8,7 +8,7 @@ import java.util.ArrayList;
 
 public class LogManager {
 
-    private static final String DB_PATH = "/rocksdb_log";  // RocksDB 数据库路径
+    private static final String DB_PATH = "/opt/module/hw-dfs/rocksdb_log";  // RocksDB 数据库路径
     private RocksDB db;
 
     public LogManager() {
